@@ -403,6 +403,59 @@ textarea{resize:vertical;min-height:60px;}
 }
 .sync-banner.visible{display:block;}
 
+/* --- Temporizador y sesiones de lectura --- */
+.reading-block{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap;
+  margin-top:10px;
+  padding-top:10px;
+  border-top:1px dashed var(--line);
+}
+.chrono{
+  font-family:var(--font-stamp);
+  font-size:1.05rem;
+  color:var(--brick);
+  font-variant-numeric:tabular-nums;
+  min-width:56px;
+}
+.icon-btn.stop{border-color:var(--brick);color:var(--brick);}
+.bookmark, .read-total{
+  font-size:.76rem;
+  color:var(--ink-soft);
+  font-family:var(--font-stamp);
+}
+.chrono-final{
+  font-family:var(--font-stamp);
+  font-size:2rem;
+  color:var(--teal-dark);
+  text-align:center;
+  margin:4px 0 10px;
+  font-variant-numeric:tabular-nums;
+}
+.check-row{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin:14px 0 0;
+  font-size:.9rem;
+  font-weight:700;
+  color:var(--ink);
+  cursor:pointer;
+}
+.check-row input{width:20px;height:20px;flex:0 0 auto;}
+.session-row{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:9px 10px;
+  background:var(--bg);
+  border:1px solid var(--line);
+  border-radius:10px;
+  margin-bottom:6px;
+}
+
 /* --- Buscador con escaneo --- */
 .search-row{display:flex;gap:8px;align-items:stretch;}
 .search-row input{flex:1;min-width:0;}

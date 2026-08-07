@@ -37,6 +37,25 @@ export function formatDate(iso) {
   return m ? `${m[3]}/${m[2]}/${m[1]}` : String(iso || '');
 }
 
+/** 0 → "0 min" · 45 → "45 min" · 90 → "1 h 30 min" · 120 → "2 h" */
+export function formatMinutes(min) {
+  const m = Math.max(0, Math.round(Number(min) || 0));
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  const resto = m % 60;
+  return resto ? `${h} h ${resto} min` : `${h} h`;
+}
+
+/** Milisegundos → "M:SS" o "H:MM:SS", para el cronómetro en marcha. */
+export function formatChrono(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const dos = n => String(n).padStart(2, '0');
+  return h ? `${h}:${dos(m)}:${dos(s)}` : `${m}:${dos(s)}`;
+}
+
 // ---- ISBN ----
 // Los códigos de barras de los libros son EAN-13, que para libros coincide con
 // el ISBN-13 (empieza por 978 o 979). Los libros antiguos llevan ISBN-10.

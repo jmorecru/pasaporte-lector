@@ -46,6 +46,10 @@ service cloud.firestore {
 
         match /books/{bookId} {
           allow read, write: if isFamilyMember(familyId);
+
+          match /sessions/{sessionId} {
+            allow read, write: if isFamilyMember(familyId);
+          }
         }
       }
     }

@@ -202,3 +202,50 @@ export async function updateBook(familyId, childId, bookId, changes) {
 export async function deleteBook(familyId, childId, bookId) {
   await deleteDoc(bookDoc(familyId, childId, bookId));
 }
+
+// ---- Sesiones de lectura ----
+//
+// Cada sesión es un documento propio. Es lo que permitirá preguntar "cuántos
+// minutos ha leído esta semana" cuando lleguen las metas; con un simple total
+// acumulado no se podría.
+//
+// Aun así, el libro guarda `totalMinutes` y `sessionCount` duplicados. No es
+// incoherencia: las metas se calcularán leyendo las sesiones, pero la tarjeta
+// necesita el total al vuelo y suscribirse a las sesiones de todos los libros
+// del niño solo para pintarlo sería un derroche. El duplicado es para mostrar.
+
+const sessionsCol = (familyId, childId, bookId) =>
+  collection(db, 'families', familyId, 'children', childId, 'books', bookId, 'sessions');
+
+/**
+ * Escucha las sesiones de un libro, de la más reciente a la más antigua.
+ * Solo se usa al desplegar el historial de un libro concreto.
+ * @returns {() => void} función para cancelar la suscripción.
+ */
+export function subscribeSessions(familyId, childId, bookId, onChange, onError) {
+  const q = query(sessionsCol(familyId, childId, bookId), orderBy('endedAt', 'desc'));
+  return onSnapshot(
+    q,
+    snap => onChange(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+    err => { console.error('Error escuchando sesiones', err); onError && onError(err); }
+  );
+}
+
+/**
+ * Guarda una sesión terminada y actualiza el libro en una sola operación:
+ * suma los minutos, avanza el marcapáginas y apaga el cronómetro.
+ * Al ir en un lote, o se aplica todo o no se aplica nada.
+ */
+export async function endSession(familyId, childId, bookId, session, bookChanges) {
+  const batch = writeBatch(db);
+  batch.set(doc(sessionsCol(familyId, childId, bookId)), session);
+  batch.update(bookDoc(familyId, childId, bookId), bookChanges);
+  await batch.commit();
+}
+
+export async function deleteSession(familyId, childId, bookId, sessionId, bookChanges) {
+  const batch = writeBatch(db);
+  batch.delete(doc(sessionsCol(familyId, childId, bookId), sessionId));
+  batch.update(bookDoc(familyId, childId, bookId), bookChanges);
+  await batch.commit();
+}

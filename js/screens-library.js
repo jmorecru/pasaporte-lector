@@ -11,7 +11,7 @@ import * as store from './store.js';
 import { googleBooksApiKey } from './firebase-config.js';
 import {
   escapeHtml, todayISO, formatDate, describeError, stripTags,
-  looksLikeIsbn, normalizeIsbn
+  looksLikeIsbn, normalizeIsbn, formatMinutes, formatChrono
 } from './util.js';
 import { barcodeAvailable, scanBarcode } from './barcode.js';
 
@@ -41,6 +41,8 @@ export class LibraryScreen {
     this.selectedBookResult = null;
     this.searchDebounce = null;
     this.unsubscribe = null;
+    this.unsubSessions = null;
+    this.chronoTimer = null;
   }
 
   mount() {
@@ -65,7 +67,9 @@ export class LibraryScreen {
 
   destroy() {
     if (this.unsubscribe) { this.unsubscribe(); this.unsubscribe = null; }
+    if (this.unsubSessions) { this.unsubSessions(); this.unsubSessions = null; }
     clearTimeout(this.searchDebounce);
+    clearInterval(this.chronoTimer);
   }
 
   // ---- Colecciones y etiquetas ----
@@ -211,6 +215,7 @@ export class LibraryScreen {
           ${stars ? `<span class="stars">${stars}</span>` : ''}
           ${b.pages ? `<span class="book-pages">${b.pages} páginas</span>` : ''}
         </div>
+        ${this.readingBlock(b)}
         ${tags.length ? `<div class="book-tags">${tags.map(t => `<span class="tag-chip static">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
         ${b.description ? `<details class="synopsis"><summary>Sinopsis</summary><p>${escapeHtml(b.description)}</p></details>` : ''}
         ${b.notes ? `<p class="book-notes">"${escapeHtml(b.notes)}"</p>` : ''}
@@ -223,6 +228,46 @@ export class LibraryScreen {
         </div>
       </div>
     `;
+  }
+
+  /** Cronómetro, marcapáginas y minutos acumulados de un libro. */
+  readingBlock(b) {
+    const partes = [];
+    if (b.activeSince) {
+      partes.push(`<span class="chrono" data-chrono="${b.id}">${escapeHtml(formatChrono(Date.now() - b.activeSince))}</span>`);
+      partes.push(`<button class="icon-btn stop" data-action="stop-session" data-id="${b.id}">⏹ Terminar sesión</button>`);
+    } else if (b.status !== 'terminado') {
+      partes.push(`<button class="icon-btn" data-action="start-session" data-id="${b.id}">⏱ Empezar a leer</button>`);
+    }
+    if (b.currentPage) {
+      partes.push(`<span class="bookmark">🔖 vas por la página ${b.currentPage}</span>`);
+    }
+    if (b.totalMinutes) {
+      partes.push(`<span class="read-total">⏳ ${escapeHtml(formatMinutes(b.totalMinutes))}</span>`);
+    }
+    if (b.sessionCount) {
+      partes.push(`<button class="icon-btn" data-action="sessions" data-id="${b.id}">🕘 ${b.sessionCount} sesión${b.sessionCount === 1 ? '' : 'es'}</button>`);
+    }
+    return partes.length ? `<div class="reading-block">${partes.join('')}</div>` : '';
+  }
+
+  /**
+   * Refresca los cronómetros en marcha cada segundo tocando solo su texto.
+   * Volver a pintar la pantalla entera cerraría las sinopsis desplegadas y
+   * daría un parpadeo cada segundo.
+   */
+  startChronoTicking() {
+    clearInterval(this.chronoTimer);
+    const activos = this.books.filter(b => b.activeSince);
+    if (!activos.length) return;
+    const tick = () => {
+      activos.forEach(b => {
+        const el = this.root.querySelector(`[data-chrono="${b.id}"]`);
+        if (el) el.textContent = formatChrono(Date.now() - b.activeSince);
+      });
+    };
+    tick();
+    this.chronoTimer = setInterval(tick, 1000);
   }
 
   bindEvents() {
@@ -260,6 +305,17 @@ export class LibraryScreen {
     this.root.querySelectorAll('[data-action="delete-book"]').forEach(btn => {
       btn.onclick = () => this.deleteBook(btn.dataset.id);
     });
+    this.root.querySelectorAll('[data-action="start-session"]').forEach(btn => {
+      btn.onclick = () => this.startSession(btn.dataset.id);
+    });
+    this.root.querySelectorAll('[data-action="stop-session"]').forEach(btn => {
+      btn.onclick = () => this.openEndSessionSheet(btn.dataset.id);
+    });
+    this.root.querySelectorAll('[data-action="sessions"]').forEach(btn => {
+      btn.onclick = () => this.openSessionsSheet(btn.dataset.id);
+    });
+
+    this.startChronoTicking();
   }
 
   // ---- Escrituras ----
@@ -293,6 +349,211 @@ export class LibraryScreen {
     console.error(message, err);
     this.syncError = message;
     this.render();
+  }
+
+  // ---- Sesiones de lectura ----
+
+  /**
+   * Arranca el cronómetro guardando la marca de inicio en el libro.
+   *
+   * Se guarda el instante, no un contador que vaya sumando: si el niño bloquea
+   * la tablet o se va a otra app, un contador en JavaScript se congela y el
+   * tiempo saldría corto. Con la marca de inicio da igual lo que pase por medio,
+   * e incluso sobrevive a cerrar la app o recargar.
+   */
+  async startSession(bookId) {
+    const book = this.books.find(b => b.id === bookId);
+    if (!book || book.activeSince) return;
+    const changes = { activeSince: Date.now() };
+    // Si estaba en la lista de pendientes, empezar a leerlo es empezar a leerlo.
+    if (book.status === 'pendiente') changes.status = 'leyendo';
+    try {
+      await store.updateBook(this.familyId, this.child.id, bookId, changes);
+    } catch (e) {
+      this.reportError('No se pudo arrancar el temporizador.', e);
+    }
+  }
+
+  openEndSessionSheet(bookId) {
+    const book = this.books.find(b => b.id === bookId);
+    if (!book || !book.activeSince) return;
+
+    const startedAt = book.activeSince;
+    const transcurridoMs = Date.now() - startedAt;
+    const minutos = Math.max(1, Math.round(transcurridoMs / 60000));
+    // Cuatro horas seguidas es más probable que sea un cronómetro olvidado que
+    // una sesión real, así que avisamos en vez de sumarlo callando.
+    const sospechoso = transcurridoMs > 4 * 60 * 60 * 1000;
+    const desde = book.currentPage ? book.currentPage + 1 : 1;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    overlay.innerHTML = `
+      <div class="sheet">
+        <h3>Fin de la sesión</h3>
+        <p class="chrono-final">${escapeHtml(formatChrono(transcurridoMs))}</p>
+        ${sospechoso ? `<p class="form-error">Han pasado más de 4 horas. ¿Te dejaste el temporizador puesto? Corrige los minutos si hace falta.</p>` : ''}
+
+        <label for="session-minutes">Minutos leídos</label>
+        <input type="number" id="session-minutes" min="1" max="1440" value="${minutos}">
+        <p class="field-hint">Sale del cronómetro, pero puedes ajustarlo.</p>
+
+        <label for="session-from">De la página</label>
+        <input type="number" id="session-from" min="1" max="20000" value="${desde}">
+
+        <label for="session-to">A la página</label>
+        <input type="number" id="session-to" min="1" max="20000" placeholder="¿Por dónde te has quedado?">
+        <p class="field-hint">Esta será tu marca para la próxima vez. Puedes dejarlo en blanco si no lo sabes.</p>
+
+        <label class="check-row">
+          <input type="checkbox" id="session-finished">
+          <span>Lo he terminado</span>
+        </label>
+
+        <p class="form-error" id="session-error"></p>
+        <div class="sheet-actions">
+          <button class="btn-secondary" id="discard-session">Descartar</button>
+          <button class="btn-confirm" id="save-session">Guardar sesión</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+
+    const error = overlay.querySelector('#session-error');
+    const pageTo = overlay.querySelector('#session-to');
+    const finished = overlay.querySelector('#session-finished');
+
+    // Si dice que ha llegado a la última página, damos por hecho que lo terminó.
+    if (book.pages) {
+      pageTo.addEventListener('input', () => {
+        const n = parseInt(pageTo.value, 10);
+        if (Number.isFinite(n) && n >= book.pages) finished.checked = true;
+      });
+    }
+
+    overlay.querySelector('#discard-session').onclick = async () => {
+      overlay.remove();
+      try {
+        await store.updateBook(this.familyId, this.child.id, bookId, { activeSince: null });
+      } catch (e) {
+        this.reportError('No se pudo descartar la sesión.', e);
+      }
+    };
+
+    const guardar = overlay.querySelector('#save-session');
+    guardar.onclick = async () => {
+      const min = parseInt(overlay.querySelector('#session-minutes').value, 10);
+      if (!Number.isFinite(min) || min < 1) { error.textContent = 'Pon cuántos minutos has leído.'; return; }
+      const from = parseInt(overlay.querySelector('#session-from').value, 10);
+      const to = parseInt(pageTo.value, 10);
+      if (Number.isFinite(from) && Number.isFinite(to) && to < from) {
+        error.textContent = 'La página final es anterior a la inicial.';
+        return;
+      }
+
+      const session = {
+        startedAt,
+        endedAt: Date.now(),
+        minutes: min,
+        pageFrom: Number.isFinite(from) ? from : null,
+        pageTo: Number.isFinite(to) ? to : null,
+        day: todayISO()      // para poder agrupar por día sin recalcular fechas
+      };
+      const bookChanges = {
+        activeSince: null,
+        totalMinutes: (book.totalMinutes || 0) + min,
+        sessionCount: (book.sessionCount || 0) + 1
+      };
+      if (Number.isFinite(to)) bookChanges.currentPage = to;
+      if (finished.checked) {
+        bookChanges.status = 'terminado';
+        bookChanges.finishedAt = todayISO();
+      }
+
+      guardar.disabled = true;
+      try {
+        await store.endSession(this.familyId, this.child.id, bookId, session, bookChanges);
+        if (finished.checked) {
+          this.freshlyFinishedId = bookId;
+          setTimeout(() => { this.freshlyFinishedId = null; }, 700);
+        }
+        overlay.remove();
+      } catch (e) {
+        console.error(e);
+        error.textContent = describeError(e);
+        guardar.disabled = false;
+      }
+    };
+  }
+
+  /** Historial de sesiones de un libro, con opción de borrar las erróneas. */
+  openSessionsSheet(bookId) {
+    const book = this.books.find(b => b.id === bookId);
+    if (!book) return;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    overlay.innerHTML = `
+      <div class="sheet">
+        <h3>Sesiones de "${escapeHtml(book.title)}"</h3>
+        <p class="field-hint">${escapeHtml(formatMinutes(book.totalMinutes || 0))} en total.</p>
+        <div id="sessions-list"><p class="field-hint">Cargando…</p></div>
+        <div class="sheet-actions">
+          <button class="btn-secondary" id="close-sessions">Cerrar</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const lista = overlay.querySelector('#sessions-list');
+    const cerrar = () => {
+      if (this.unsubSessions) { this.unsubSessions(); this.unsubSessions = null; }
+      overlay.remove();
+    };
+    overlay.querySelector('#close-sessions').onclick = cerrar;
+    overlay.addEventListener('click', e => { if (e.target === overlay) cerrar(); });
+
+    // Solo nos suscribimos mientras la hoja está abierta: escuchar las sesiones
+    // de todos los libros a la vez sería un derroche para lo poco que se miran.
+    this.unsubSessions = store.subscribeSessions(
+      this.familyId, this.child.id, bookId,
+      sessions => {
+        if (!sessions.length) {
+          lista.innerHTML = '<p class="field-hint">Todavía no hay sesiones guardadas.</p>';
+          return;
+        }
+        lista.innerHTML = sessions.map(s => `
+          <div class="session-row">
+            <div class="admin-row-main">
+              <p class="admin-row-title">${escapeHtml(formatMinutes(s.minutes))}</p>
+              <p class="admin-row-sub">${escapeHtml(formatDate(s.day || ''))}${
+                s.pageFrom && s.pageTo ? ` · págs. ${s.pageFrom}–${s.pageTo}` : ''
+              }</p>
+            </div>
+            <button class="icon-btn danger" data-session="${s.id}" data-min="${s.minutes}">Borrar</button>
+          </div>
+        `).join('');
+
+        lista.querySelectorAll('[data-session]').forEach(btn => {
+          btn.onclick = async () => {
+            btn.disabled = true;
+            const min = parseInt(btn.dataset.min, 10) || 0;
+            const actual = this.books.find(b => b.id === bookId) || book;
+            try {
+              await store.deleteSession(this.familyId, this.child.id, bookId, btn.dataset.session, {
+                totalMinutes: Math.max(0, (actual.totalMinutes || 0) - min),
+                sessionCount: Math.max(0, (actual.sessionCount || 0) - 1)
+              });
+            } catch (e) {
+              console.error(e);
+              btn.disabled = false;
+            }
+          };
+        });
+      },
+      () => { lista.innerHTML = '<p class="form-error">No se pudieron cargar las sesiones.</p>'; }
+    );
   }
 
   // ---- Buscador de Google Books ----

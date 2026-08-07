@@ -175,13 +175,17 @@ Los requisitos 9–12 no son solo interfaz: obligan a ampliar el modelo. Se deci
 **Sesiones de lectura** (requisito 10). Cada sesión es un documento propio, no un contador dentro del libro:
 
 ```
-children/{childId}/books/{bookId}/sessions/{sessionId}
-  → { startedAt, endedAt, minutes, pageFrom, pageTo }
+families/{familyId}/children/{childId}/books/{bookId}/sessions/{sessionId}
+  → { startedAt, endedAt, minutes, pageFrom, pageTo, day }
 ```
 
-Guardar sesiones sueltas es lo que hace posibles los retos de minutos y las rachas; un simple total acumulado en el libro no permitiría preguntar "cuántos minutos esta semana". El libro guarda además `currentPage` (marcapáginas).
+Guardar sesiones sueltas es lo que hace posibles los retos de minutos y las rachas; un simple total acumulado en el libro no permitiría preguntar "cuántos minutos esta semana". El campo `day` (ISO corto) evita tener que recalcular fechas al agrupar.
 
-El temporizador debe cronometrar con la marca de tiempo de inicio, **no** contando intervalos en JavaScript: si el niño bloquea la tablet o cambia de app, los intervalos se congelan y el tiempo saldría mal. Guardar `startedAt` y restar al parar.
+El temporizador cronometra con la **marca de tiempo de inicio**, no contando intervalos en JavaScript: si el niño bloquea la tablet o cambia de app, los intervalos se congelan y el tiempo saldría mal. Esa marca vive en `books/{bookId}.activeSince`, así que el cronómetro sobrevive a cerrar la app o recargar, y desde otro dispositivo se ve que ese libro se está leyendo ahora mismo.
+
+Al parar se propone el tiempo del cronómetro pero **se puede corregir**: nadie lee con el cronómetro perfectamente sincronizado. Si han pasado más de 4 horas se avisa, porque es más probable que sea un cronómetro olvidado que una sesión real. También se puede descartar la sesión, y borrar sesiones sueltas del historial.
+
+El libro guarda `currentPage` (marcapáginas, que se propone como página inicial de la siguiente sesión) y además `totalMinutes` y `sessionCount` **duplicados** respecto a las sesiones. Ese duplicado es deliberado y solo de presentación: las metas se calcularán leyendo las sesiones, pero la tarjeta necesita el total para pintarlo y suscribirse a las sesiones de todos los libros solo para eso sería un derroche. Se escribe en el mismo lote que la sesión, así que no pueden desincronizarse.
 
 **Metas e insignias** (requisitos 11–12). Las metas **las fija el adulto**, desde la configuración del perfil de cada niño (detrás del PIN de adulto); el niño las ve y ve su progreso, pero no las cambia. Se guardan como documentos por niño. El progreso se **calcula al vuelo** desde las sesiones y los libros terminados; no se mantiene un contador duplicado, que se desincronizaría. De las insignias sí se guarda la fecha de desbloqueo, para que el momento del logro sea estable y no cambie si luego se corrige una sesión.
 
@@ -198,9 +202,9 @@ La cámara además exige HTTPS — GitHub Pages lo da, pero abriendo el fichero 
 3. ~~Implementar la pantalla "¿Quién eres?" + código por cumpleaños + acceso de adulto con PIN, sustituyendo el PIN único actual.~~ **Hecho**, junto con el modelo multi-familia y las cuentas de Firebase Authentication.
 4. ~~Añadir libro por ISBN tecleado.~~ **Hecho.** El buscador detecta si lo tecleado es un ISBN (con verificación del dígito de control) y consulta `q=isbn:...`.
 5. ~~Escaneo de código de barras con cámara.~~ **Hecho**, con `BarcodeDetector`. Pendiente de probar en un dispositivo real con cámara.
-6. Temporizador de lectura + sesiones + marcapáginas.
-7. Metas e insignias (dependen de que existan sesiones).
-8. ~~Verificar el comportamiento en los tres dispositivos.~~ Probado en móvil; falta tablet Android y Fire.
+6. ~~Temporizador de lectura + sesiones + marcapáginas.~~ **Hecho.**
+7. Metas e insignias (dependen de que existan sesiones). **Siguiente.**
+8. ~~Verificar el comportamiento en los tres dispositivos.~~ Probado en iPhone y tablet Android, instalada como app en ambos. Falta la Fire.
 9. ~~Subir el proyecto a GitHub y activar GitHub Pages.~~ **Hecho**: https://jmorecru.github.io/pasaporte-lector/
 10. Probar el flujo completo con cada hijo desde su propio dispositivo.
 
