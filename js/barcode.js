@@ -116,20 +116,24 @@ async function ajustarCamara(stream, overlay) {
 }
 
 /**
- * Recorta la zona central del fotograma (la que marca el rectángulo guía en
- * pantalla) y la amplía sobre un canvas reutilizable.
+ * Recorta el centro del fotograma y lo amplía sobre un canvas reutilizable.
  *
- * Esto es lo que de verdad ayuda cuando el código sale enfocado pero
- * diminuto en el encuadre: un zoom por software, hecho sobre una imagen que
- * ya está nítida, en vez de confiar en que el hardware tenga zoom óptico.
- * Los porcentajes coinciden con los de `.scanner-frame` en el CSS.
+ * El margen es deliberadamente generoso (90% del ancho, 60% del alto), no
+ * ajustado al rectángulo guía visual. El vídeo en pantalla pasa por
+ * `object-fit:cover`, que recorta los lados para encajarlo en el hueco — y
+ * ese recorte depende de la proporción real que conceda la cámara, que varía
+ * por dispositivo. Ajustar el recorte digital al recuadro exacto que se ve en
+ * pantalla exigiría conocer esa proporción en cada caso; calcularlo mal deja
+ * el código fuera de la zona que se analiza, que es peor que no recortar en
+ * absoluto. Con un margen amplio se pierde algo de aumento, pero el código
+ * casi seguro queda dentro pase lo que pase.
  */
 function recortarCentro(video, canvas) {
   const vw = video.videoWidth, vh = video.videoHeight;
   if (!vw || !vh) return null;
 
-  const cropX = vw * 0.08, cropW = vw * 0.84;
-  const cropY = vh * 0.32, cropH = vh * 0.36;
+  const cropX = vw * 0.05, cropW = vw * 0.90;
+  const cropY = vh * 0.20, cropH = vh * 0.60;
 
   const destW = 1000;
   const destH = Math.round(destW * (cropH / cropW));
