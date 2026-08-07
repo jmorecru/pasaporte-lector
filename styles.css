@@ -403,6 +403,59 @@ textarea{resize:vertical;min-height:60px;}
 }
 .sync-banner.visible{display:block;}
 
+/* --- Buscador con escaneo --- */
+.search-row{display:flex;gap:8px;align-items:stretch;}
+.search-row input{flex:1;min-width:0;}
+.btn-scan{
+  flex:0 0 auto;
+  width:48px;
+  border:1px solid var(--line);
+  background:var(--paper);
+  border-radius:8px;
+  font-size:1.25rem;
+  cursor:pointer;
+  line-height:1;
+}
+.btn-scan:active{background:var(--bg);}
+
+.scanner-overlay{align-items:center;}
+.scanner{
+  background:var(--paper);
+  width:100%;
+  max-width:420px;
+  margin:0 12px;
+  border-radius:var(--radius);
+  padding:16px;
+  text-align:center;
+}
+.scanner-video-wrap{
+  position:relative;
+  border-radius:10px;
+  overflow:hidden;
+  background:#000;
+  aspect-ratio:4/3;
+}
+.scanner-video-wrap video{
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  display:block;
+}
+/* Guía visual: no recorta nada, solo indica dónde apuntar. */
+.scanner-frame{
+  position:absolute;
+  left:8%;right:8%;top:32%;bottom:32%;
+  border:3px solid rgba(255,255,255,.85);
+  border-radius:8px;
+  box-shadow:0 0 0 100vmax rgba(0,0,0,.35);
+}
+.scanner-status{
+  font-family:var(--font-stamp);
+  font-size:.82rem;
+  color:var(--ink);
+  margin:12px 0 4px;
+}
+
 /* --- Colecciones, etiquetas y sinopsis --- */
 .filters-secondary{
   display:flex;

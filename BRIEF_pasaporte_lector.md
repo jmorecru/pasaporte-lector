@@ -196,12 +196,12 @@ La cámara además exige HTTPS — GitHub Pages lo da, pero abriendo el fichero 
 1. ~~Crear proyecto en Firebase (Firestore activado) con la cuenta de Google del usuario.~~ *(guía en `SETUP_FIREBASE.md`; pendiente de que el usuario pegue sus credenciales)*
 2. ~~Sustituir las llamadas a `window.storage` por el SDK de Firebase (vía CDN, sin necesidad de npm/build).~~ **Hecho.**
 3. ~~Implementar la pantalla "¿Quién eres?" + código por cumpleaños + acceso de adulto con PIN, sustituyendo el PIN único actual.~~ **Hecho**, junto con el modelo multi-familia y las cuentas de Firebase Authentication.
-4. Añadir libro por ISBN tecleado (barato, mismo buscador).
-5. Temporizador de lectura + sesiones + marcapáginas.
-6. Metas e insignias (dependen de que existan sesiones).
-7. Escaneo de código de barras con cámara (lo más frágil entre navegadores; va al final).
-8. Verificar el comportamiento responsive en los tres dispositivos (iPhone, tablet Android, Fire).
-9. Subir el proyecto a un repositorio de GitHub del usuario y activar GitHub Pages.
+4. ~~Añadir libro por ISBN tecleado.~~ **Hecho.** El buscador detecta si lo tecleado es un ISBN (con verificación del dígito de control) y consulta `q=isbn:...`.
+5. ~~Escaneo de código de barras con cámara.~~ **Hecho**, con `BarcodeDetector`. Pendiente de probar en un dispositivo real con cámara.
+6. Temporizador de lectura + sesiones + marcapáginas.
+7. Metas e insignias (dependen de que existan sesiones).
+8. ~~Verificar el comportamiento en los tres dispositivos.~~ Probado en móvil; falta tablet Android y Fire.
+9. ~~Subir el proyecto a GitHub y activar GitHub Pages.~~ **Hecho**: https://jmorecru.github.io/pasaporte-lector/
 10. Probar el flujo completo con cada hijo desde su propio dispositivo.
 
 ## 8. Fuera de alcance (decidido explícitamente)

@@ -37,6 +37,44 @@ export function formatDate(iso) {
   return m ? `${m[3]}/${m[2]}/${m[1]}` : String(iso || '');
 }
 
+// ---- ISBN ----
+// Los códigos de barras de los libros son EAN-13, que para libros coincide con
+// el ISBN-13 (empieza por 978 o 979). Los libros antiguos llevan ISBN-10.
+
+/** Quita guiones y espacios. "978-84-204-8305-4" → "9788420483054" */
+function cleanIsbn(raw) {
+  return String(raw == null ? '' : raw).replace(/[\s-]/g, '').toUpperCase();
+}
+
+/** ¿Tiene pinta de ISBN, aunque el dígito de control esté mal? */
+export function looksLikeIsbn(raw) {
+  const s = cleanIsbn(raw);
+  return /^\d{13}$/.test(s) || /^\d{9}[\dX]$/.test(s);
+}
+
+/**
+ * Devuelve el ISBN limpio si es válido, o null.
+ * Comprueba el dígito de control, que es lo que distingue un ISBN mal copiado de
+ * un número cualquiera: sin esa comprobación buscaríamos códigos inexistentes y
+ * el usuario solo vería "sin resultados", sin saber que se equivocó al teclear.
+ */
+export function normalizeIsbn(raw) {
+  const s = cleanIsbn(raw);
+  if (/^\d{13}$/.test(s)) {
+    // ISBN-13: dígitos alternando peso 1 y 3; la suma debe ser múltiplo de 10.
+    let sum = 0;
+    for (let i = 0; i < 12; i++) sum += Number(s[i]) * (i % 2 ? 3 : 1);
+    return (10 - (sum % 10)) % 10 === Number(s[12]) ? s : null;
+  }
+  if (/^\d{9}[\dX]$/.test(s)) {
+    // ISBN-10: pesos de 10 a 1; la suma debe ser múltiplo de 11. La X vale 10.
+    let sum = 0;
+    for (let i = 0; i < 10; i++) sum += (s[i] === 'X' ? 10 : Number(s[i])) * (10 - i);
+    return sum % 11 === 0 ? s : null;
+  }
+  return null;
+}
+
 /** Un DDMM es válido si el día y el mes existen. No comprobamos el año. */
 export function isValidDDMM(code) {
   if (!/^\d{4}$/.test(code)) return false;
