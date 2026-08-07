@@ -251,7 +251,9 @@ Para la cámara se intenta primero la API `BarcodeDetector` del navegador, sin c
 
 **Decisión revisada tras ese hallazgo**: se añade **ZXing** (`@zxing/library`, ~97 KB comprimidos) como segundo motor, cargado desde CDN **solo cuando el nativo falla o no reconoce los formatos de libro**. Un dispositivo con buen soporte nativo (el caso normal en Android) no descarga nada de más. Esto sustituye la decisión original de no usar ninguna librería externa: aquel supuesto —que el soporte nativo en Android/Fire sería suficiente— no se cumplió en la práctica.
 
-El iPhone sigue fuera de los dos motores: Apple obliga a que todos los navegadores de iOS usen su motor WebKit, que no expone la cámara de este modo. En iPhone el botón de escanear sencillamente no se ofrece; quedan el título y el ISBN tecleado.
+**Corrección tras probarlo en dispositivos reales: el iPhone también escanea.** La limitación real de WebKit era solo la clase `BarcodeDetector`, no el acceso a cámara — Safari sí tiene `getUserMedia` desde hace tiempo. Al dejar de exigir el motor nativo para mostrar el botón (`barcodeAvailable()` ahora solo comprueba contexto seguro + `getUserMedia`), el iPhone cae automáticamente en el camino de ZXing y escanea sin ningún código específico para iOS. Verificado en un iPhone real.
+
+**Recorte digital en vez de zoom de hardware.** Con la cámara bien enfocada pero el código pequeño en el encuadre (detectado en el mismo Fire tablet, una vez el motor ZXing sí llegaba a intentar leer), forzar zoom por la API resultó contraproducente: la API no distingue zoom óptico de digital, y en una tablet sin zoom óptico de verdad eso recorta y estira la imagen, sumando borrosidad justo en las líneas finas del código. Se sustituyó por un recorte de la zona central del fotograma (la que marca el rectángulo guía) ampliado por software sobre un canvas antes de pasarlo al decodificador — funciona igual para los dos motores, y no depende de si el hardware tiene zoom real.
 
 La cámara además exige HTTPS — GitHub Pages lo da, pero abriendo el fichero en local no funciona.
 

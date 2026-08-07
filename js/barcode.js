@@ -14,10 +14,12 @@
 //    y solo para quien realmente necesite este segundo motor — un dispositivo
 //    con buen soporte nativo (el caso normal) no la descarga nunca.
 //
-// El iPhone queda fuera de los dos motores: Apple obliga a que todos los
-// navegadores de iOS usen su motor WebKit, que no expone la cámara para esto
-// del mismo modo. Decisión del brief: basta con que funcione en Android y
-// Fire. Requiere HTTPS en cualquier caso — en GitHub Pages hay; en local, no.
+// Efecto colateral bueno: al dejar de exigir BarcodeDetector para mostrar el
+// botón, el escaneo también funciona en iPhone vía ZXing (Safari sí tiene
+// getUserMedia, solo le falta la clase BarcodeDetector). La limitación de
+// iOS que se documentó en el brief ha quedado desactualizada por este cambio.
+//
+// Requiere HTTPS en cualquier caso — en GitHub Pages hay; en local, no.
 
 const FORMATOS_LIBRO = ['ean_13', 'ean_8', 'upc_a', 'upc_e'];
 const ZXING_URL = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
@@ -69,13 +71,20 @@ function cargarZXing() {
 }
 
 /**
- * Saca de la cámara lo mejor que sepa dar para leer un código de barras.
+ * Deja la cámara lo mejor puesta posible para leer un código de barras.
  *
  * Por defecto muchas cámaras arrancan con enfoque fijo o de un solo disparo, y
- * en primeros planos se quedan borrosas: es lo que obliga a bailar con el libro
- * hasta que engancha. Pedir enfoque continuo lo corrige donde esté disponible.
- * Todo esto es opcional en la especificación, así que se aplica lo que haya y se
- * ignora en silencio lo que no: nada de esto debe impedir escanear.
+ * en primeros planos se quedan borrosas. Pedir enfoque continuo lo corrige
+ * donde esté disponible. Es opcional en la especificación, así que se aplica
+ * lo que haya y se ignora en silencio lo que no: nada de esto debe impedir
+ * escanear.
+ *
+ * A propósito NO se toca el zoom: la API no distingue zoom óptico de digital,
+ * y en una tablet sin zoom óptico de verdad (lo habitual) forzarlo recorta y
+ * estira la imagen, añadiendo borrosidad justo en las líneas finas de un
+ * código de barras — se detectó ese síntoma exacto en un Fire tablet real. El
+ * acercamiento se hace después, por software, sobre un recorte ya nítido
+ * (ver `recortarCentro`), que no depende de si el hardware sabe hacer zoom.
  */
 async function ajustarCamara(stream, overlay) {
   const track = stream.getVideoTracks()[0];
@@ -84,17 +93,8 @@ async function ajustarCamara(stream, overlay) {
   let caps = {};
   try { caps = track.getCapabilities() || {}; } catch (e) { return; }
 
-  const avanzado = [];
   if (Array.isArray(caps.focusMode) && caps.focusMode.includes('continuous')) {
-    avanzado.push({ focusMode: 'continuous' });
-  }
-  // Nada de zoom automático: la API no distingue zoom óptico de digital, y en
-  // tablets sin zoom óptico de verdad (lo habitual) recortar y estirar la
-  // imagen añade borrosidad justo en las líneas finas de un código de barras
-  // — se detectó exactamente ese síntoma en un Fire tablet real. Mejor un
-  // encuadre algo más pequeño y nítido que uno grande y emborronado.
-  if (avanzado.length) {
-    try { await track.applyConstraints({ advanced: avanzado }); } catch (e) { /* opcional */ }
+    try { await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch (e) { /* opcional */ }
   }
 
   // Linterna, si la hay: los códigos en papel satinado se leen fatal a contraluz.
@@ -116,6 +116,32 @@ async function ajustarCamara(stream, overlay) {
 }
 
 /**
+ * Recorta la zona central del fotograma (la que marca el rectángulo guía en
+ * pantalla) y la amplía sobre un canvas reutilizable.
+ *
+ * Esto es lo que de verdad ayuda cuando el código sale enfocado pero
+ * diminuto en el encuadre: un zoom por software, hecho sobre una imagen que
+ * ya está nítida, en vez de confiar en que el hardware tenga zoom óptico.
+ * Los porcentajes coinciden con los de `.scanner-frame` en el CSS.
+ */
+function recortarCentro(video, canvas) {
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (!vw || !vh) return null;
+
+  const cropX = vw * 0.08, cropW = vw * 0.84;
+  const cropY = vh * 0.32, cropH = vh * 0.36;
+
+  const destW = 1000;
+  const destH = Math.round(destW * (cropH / cropW));
+  if (canvas.width !== destW) canvas.width = destW;
+  if (canvas.height !== destH) canvas.height = destH;
+
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, destW, destH);
+  return canvas;
+}
+
+/**
  * Abre la cámara y resuelve con el código leído, o con null si se cancela o
  * falla. Nunca lanza: los errores se cuentan en pantalla.
  */
@@ -131,7 +157,7 @@ export async function scanBarcode() {
         <div class="scanner-frame"></div>
       </div>
       <p class="scanner-status" id="scanner-status">Pidiendo permiso para usar la cámara…</p>
-      <p class="field-hint">Apunta al código de barras de la contraportada, a unos 15&nbsp;cm y con buena luz. Se lee solo.</p>
+      <p class="field-hint">Encuadra el código de barras dentro del recuadro, con buena luz. Se lee solo.</p>
       <div class="sheet-actions">
         <button class="btn-secondary" id="scanner-cancel">Cancelar</button>
       </div>
@@ -141,15 +167,14 @@ export async function scanBarcode() {
 
   const video = overlay.querySelector('#scanner-video');
   const status = overlay.querySelector('#scanner-status');
+  const lienzo = document.createElement('canvas');   // se reutiliza en cada intento, no se recrea
 
   let stream = null;
-  let rafId = null;
-  let zxingReader = null;
+  let tickId = null;
   let finished = false;
 
   const cleanup = () => {
-    if (rafId) clearTimeout(rafId);
-    if (zxingReader) { try { zxingReader.reset(); } catch (e) { /* ya suelto */ } }
+    if (tickId) clearTimeout(tickId);
     if (stream) stream.getTracks().forEach(t => t.stop());   // apaga la cámara
     overlay.remove();
   };
@@ -164,6 +189,38 @@ export async function scanBarcode() {
 
     overlay.querySelector('#scanner-cancel').onclick = () => finish(null);
     overlay.addEventListener('click', e => { if (e.target === overlay) finish(null); });
+
+    /**
+     * Bucle de detección común a los dos motores: recorta y amplía el centro
+     * del fotograma y se lo pasa a `detectarUnaVez`, que cada motor implementa
+     * a su manera (ver más abajo). Unificar el bucle evita mantener dos
+     * copias casi idénticas de esta lógica.
+     */
+    const iniciarBucle = detectarUnaVez => {
+      status.textContent = 'Buscando el código…';
+      // Unas 8 veces por segundo, no en cada fotograma: encadenar detecciones
+      // a 60 fps satura la CPU de una tablet y entorpece al propio enfoque
+      // automático de la cámara.
+      const tick = async () => {
+        if (finished) return;
+        const recorte = recortarCentro(video, lienzo);
+        if (recorte) {
+          try {
+            const rawValue = await detectarUnaVez(recorte);
+            if (rawValue) {
+              status.textContent = '¡Código leído!';
+              finish(rawValue);
+              return;
+            }
+          } catch (e) {
+            // Nada encontrado en este fotograma: es lo normal mientras se
+            // busca, no un fallo que haya que contar.
+          }
+        }
+        tickId = setTimeout(tick, 120);
+      };
+      tickId = setTimeout(tick, 120);
+    };
 
     (async () => {
       // El motor nativo no necesita cámara para prepararse, así que se intenta
@@ -234,10 +291,16 @@ export async function scanBarcode() {
         return;
       }
 
+      video.srcObject = stream;
+      try { await video.play(); } catch (e) { /* algunos navegadores ya la reproducen solos */ }
       await ajustarCamara(stream, overlay);
+      if (finished) return;   // se canceló mientras se preparaba la cámara
 
       if (detectorNativo) {
-        iniciarConMotorNativo(detectorNativo, video, stream, status, finish, () => finished);
+        iniciarBucle(async canvas => {
+          const codes = await detectorNativo.detect(canvas);
+          return (codes && codes.length && codes[0].rawValue) ? String(codes[0].rawValue) : null;
+        });
         return;
       }
 
@@ -262,48 +325,13 @@ export async function scanBarcode() {
         ]);
       } catch (e) { hints = undefined; }   // sin pistas, ZXing prueba todos los formatos
 
-      zxingReader = new ZXing.BrowserMultiFormatReader(hints);
-      status.textContent = 'Buscando el código…';
-      zxingReader.decodeFromStream(stream, video, (result, error) => {
-        if (result && result.getText && result.getText()) {
-          status.textContent = '¡Código leído!';
-          finish(String(result.getText()));
-        }
-        // Un error "no encontrado en este fotograma" llega en cada intento
-        // fallido: es el funcionamiento normal mientras se busca el código,
-        // no un fallo que haya que contar.
-      }).catch(e => {
-        if (finished) return;
-        console.error('ZXing no pudo leer de la cámara', e);
-        status.textContent = 'No se pudo leer desde la cámara. Puedes escribir el ISBN a mano.';
-      });
+      const zxingReader = new ZXing.BrowserMultiFormatReader(hints);
+      // `decode()` es síncrono y lanza si no encuentra nada en ese fotograma;
+      // se envuelve en una promesa solo para que encaje con `iniciarBucle`.
+      iniciarBucle(canvas => Promise.resolve().then(() => {
+        const resultado = zxingReader.decode(canvas);
+        return resultado && resultado.getText ? String(resultado.getText()) : null;
+      }));
     })();
   });
-}
-
-/** Bucle de detección con la API nativa del navegador. */
-function iniciarConMotorNativo(detector, video, stream, status, finish, estaTerminado) {
-  video.srcObject = stream;
-  video.play().catch(() => { /* algunos navegadores ya la reproducen solos */ });
-  status.textContent = 'Buscando el código…';
-
-  // Analizamos unas 8 veces por segundo, no en cada fotograma. Encadenar
-  // detecciones a 60 fps satura la CPU de una tablet, y de rebote entorpece
-  // al propio enfoque automático de la cámara: sale más a cuenta mirar menos
-  // veces y que cada mirada sea nítida.
-  const tick = async () => {
-    if (estaTerminado()) return;
-    try {
-      const codes = await detector.detect(video);
-      if (codes && codes.length && codes[0].rawValue) {
-        status.textContent = '¡Código leído!';
-        finish(String(codes[0].rawValue));
-        return;
-      }
-    } catch (e) {
-      // detect() falla si el vídeo aún no tiene fotograma; se reintenta.
-    }
-    setTimeout(tick, 120);
-  };
-  setTimeout(tick, 120);
 }

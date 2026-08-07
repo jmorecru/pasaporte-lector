@@ -814,8 +814,11 @@ input[type=email], input[type=password]{
 /* --- Marca de versión (depuración) --- */
 #version-badge{
   position:fixed;
-  right:6px;
-  bottom:4px;
+  right:16px;
+  /* env(safe-area-inset-bottom) evita la franja de la barra de gestos de
+     iPhone, que recortaba la marca cuando la app va instalada a pantalla
+     completa. */
+  bottom:calc(14px + env(safe-area-inset-bottom, 0px));
   font-family:var(--font-stamp);
   font-size:.65rem;
   color:var(--ink-soft);
