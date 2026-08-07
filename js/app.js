@@ -21,6 +21,16 @@ versionBadge.id = 'version-badge';
 versionBadge.textContent = `v${APP_VERSION}`;
 document.body.appendChild(versionBadge);
 
+// Registro del service worker vacío (ver sw.js: no cachea nada). Solo hace
+// falta para que algunos navegadores —Firefox para Android, confirmado—
+// usen el icono y el nombre del manifiesto al "Añadir a pantalla de inicio"
+// en vez de caer a un acceso directo simple con el favicon y el título de
+// la pestaña. No bloquea nada si falla o si el navegador no lo soporta.
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js')
+    .catch(err => console.warn('No se pudo registrar el service worker (no afecta al funcionamiento):', err));
+}
+
 // Si la configuración de Firebase sigue con los marcadores de posición, no
 // llegamos ni a cargar el SDK: explicamos qué falta en vez de reventar.
 if (isPlaceholderConfig) {

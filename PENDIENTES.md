@@ -90,16 +90,25 @@ Para no volver a dudar de si algo se hizo:
       iPhone real: ZXing solo necesita `getUserMedia`, que Safari sí tiene. Lo que
       no existe en WebKit es la clase `BarcodeDetector`, y por eso ya no hace falta.
 
-- [ ] **Código de barras pequeño en el encuadre en un Fire tablet concreto.** Con la
-      cámara enfocada, el código sale legible pero demasiado pequeño para que el
-      decodificador lo lea. Se probó un recorte digital del centro del fotograma
-      para "acercarlo" por software, pero **se revirtió**: rompió el escaneo en un
-      iPhone donde antes funcionaba (el recorte daba por hecho una relación entre
-      el vídeo en bruto y el recuadro visual que no se cumple igual en todos los
-      dispositivos). Queda sin arreglar en ese Fire tablet concreto; el ISBN
-      tecleado sigue siendo la vía completa ahí. Si se retoma, probar primero en
-      un dispositivo de escritorio con cámara antes de publicar, no a ciegas contra
-      los dispositivos de la familia.
+- [x] ~~**Icono y nombre incorrectos al instalar con Firefox en el Fire tablet.**~~
+      Faltaba un service worker: Firefox para Android lo exige para considerar la
+      web "instalable de verdad" y usar el icono/nombre del manifiesto; sin él cae
+      a un acceso directo simple con el favicon pequeño y el título de la pestaña.
+      Se añadió `sw.js`, deliberadamente vacío (no cachea nada). **Hay que borrar el
+      acceso directo que ya se creó mal y volver a añadirlo** — uno creado antes de
+      este cambio no se corrige solo.
+
+- [x] ~~**Escáner de código de barras en el Fire tablet.**~~ **Cerrado, no se persigue
+      más.** Falla igual en Silk y en Firefox sobre el mismo dispositivo — dos
+      motores de renderizado distintos fallando idéntico apunta al hardware de la
+      cámara, no al navegador ni al código. Coincide con que los números impresos
+      del ISBN se ven casi ilegibles a simple vista en esa cámara. Se probó un
+      recorte digital para "acercar" un código pequeño en el encuadre, pero se
+      revirtió: rompía el escaneo en el iPhone, que sí funciona, por dar por hecho
+      una relación entre vídeo en bruto y recuadro visual que no se cumple igual en
+      todos los dispositivos. En esa Fire, el ISBN tecleado es la vía normal, no un
+      segundo plato — funciona igual de bien.
+      Estado final por dispositivo: Android ✅ · iPhone ✅ · Fire tablet ❌ (hardware).
 
 - [x] ~~**Escaneo de código de barras en Android/Fire sin soporte nativo.**~~ Hecho:
       se añadió ZXing (`@zxing/library`, CDN) como motor de repuesto, cargado solo
