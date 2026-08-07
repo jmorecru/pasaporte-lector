@@ -1,67 +1,99 @@
 # Temas pendientes
 
-Cosas que hay que hacer pero que no bloquean el desarrollo ahora mismo. Anotadas para
-que no se pierdan. Las tareas de desarrollo en sí están en el brief, sección 7; esto es
-lo demás: configuración, limpieza y decisiones aplazadas.
+Cosas que hay que hacer pero que no bloquean el desarrollo. Las tareas de desarrollo
+están en el brief, sección 7; esto es lo demás: configuración, limpieza y decisiones
+aplazadas.
 
-## Antes de publicar en GitHub Pages
+Última revisión: 7 de agosto de 2026.
 
-- [ ] **Restringir la clave de Google Books por dominio.**
-      La clave `googleBooksApiKey` de `js/firebase-config.js` acabará publicada y
-      visible para cualquiera (es normal en una web, pero aun así). Se creó con
-      *Restricciones de aplicación → Ninguno* a propósito, para no romper `localhost`
-      mientras desarrollamos.
-      Cuando exista la dirección definitiva: consola de Google Cloud → proyecto
-      `pasaporte-lector` → APIs y servicios → Credenciales → editar la clave
-      *Google Books - Pasaporte Lector* → Restricciones de aplicación → **Sitios web**
-      → añadir el dominio de GitHub Pages y `localhost:8000`.
-      Sin esto, cualquiera que la copie puede gastar la cuota diaria de 1.000 búsquedas.
-      *No tocar nunca la otra clave, la de Firebase: restringirla mal deja la app sin
-      acceso a Firestore.*
+---
 
-- [ ] **Autorizar el dominio de GitHub Pages en Firebase Authentication.**
-      Consola de Firebase → Authentication → Settings → Dominios autorizados.
-      Sin esto el inicio de sesión falla desde el dominio publicado.
+## ✅ Ya configurado (no tocar)
 
-- [ ] **Comprobar el diseño responsive en los tres dispositivos reales**: iPhone
-      (Safari), tablet Android (Chrome) y Fire (Silk). Hasta ahora solo se ha probado
-      en escritorio.
+Para no volver a dudar de si algo se hizo:
 
-## Limpieza
+- Proyecto de Firebase `pasaporte-lector`, con Firestore en `eur3`.
+- App web registrada; credenciales en `js/firebase-config.js`.
+- Authentication con **Correo electrónico/contraseña** habilitado.
+- **Reglas de seguridad publicadas** — verificado el 7/8/2026 leyendo la base de datos
+  sin sesión: las cuatro colecciones devuelven `403`.
+- Clave propia de Google Books creada, con la Books API habilitada.
+- Repositorio público `jmorecru/pasaporte-lector` y GitHub Pages activo en
+  **https://jmorecru.github.io/pasaporte-lector/**
+- `jmorecru.github.io` autorizado en Firebase → Authentication → Settings.
+- Datos de prueba del modelo antiguo borrados.
 
-- [ ] **Borrar los datos de prueba de Firestore.** El PIN, el niño y el libro creados
-      el 6/8/2026 cuelgan de la raíz (`children`, `config`), del modelo antiguo. Las
-      reglas nuevas ya los dejan inaccesibles desde la app, pero siguen ocupando sitio
-      en la base de datos. Se borran desde la consola de Firebase → Firestore → Datos,
-      seleccionando cada colección y usando "Eliminar colección".
+---
 
-- [ ] **Borrar `pasaporte_lector.html`** (el prototipo original de Claude.ai) cuando la
-      versión nueva esté validada. Se mantiene de momento solo como referencia visual.
+## Pendiente de verdad
+
+### Lo siguiente que toca
+
+- [ ] **Probar la app en los tres dispositivos reales**: iPhone (Safari), tablet Android
+      (Chrome) y Fire (Silk). En navegador de escritorio funciona todo. Falta ver cómo
+      se comporta en pantalla pequeña y si Safari da guerra.
+      Probar también "Añadir a pantalla de inicio": debería abrirse a pantalla completa
+      con el icono del libro.
+
+### Seguridad y limpieza
+
+- [ ] **Confirmar si la restricción de la clave de Books hace algo.** Se restringió a
+      los dominios `https://jmorecru.github.io/*` y `http://localhost:8000/*`, pero al
+      probarla 25 minutos después seguía aceptando peticiones sin `referer` y con
+      `referer` de terceros. O tarda más en propagarse, o la API de Books no aplica
+      restricciones de aplicación. Si es lo segundo, no hay arreglo: solo saberlo.
+      Riesgo real si no funciona: que alguien gaste las 1.000 búsquedas diarias.
+
+- [ ] **Cerrar los dos avisos de secret scanning de GitHub** como *Won't fix*, con el
+      motivo "clave de navegador, pública por diseño; protegida por las reglas de
+      Firestore". No rotar las claves: la nueva quedaría igual de pública.
+      - https://github.com/jmorecru/pasaporte-lector/security/secret-scanning/1
+      - https://github.com/jmorecru/pasaporte-lector/security/secret-scanning/2
+
+- [ ] **Opcional: restringir por dominio la clave de Firebase.** Evitaría que alguien
+      creara cuentas en el proyecto desde fuera. **Ojo**: hacerlo mal deja la app sin
+      acceso a Firestore ni al login. Modo seguro: poner solo *Restricciones de
+      aplicación → Sitios web* con esos dos dominios, y dejar *Restricciones de API* en
+      "No restringir", que es la parte que rompe cosas. Hacerlo **después** de validar
+      la app en los móviles, y de uno en uno.
+
+- [ ] **Borrar `pasaporte_lector.html`**, el prototipo original de Claude.ai. Ya está
+      superado y se publicó al repositorio por inercia.
+
+### Higiene de la cuenta de GitHub (nada urgente)
+
+- [ ] **`git config --global user.email` sigue siendo `jamoreno@enagas.es`.** En este
+      repositorio no importa (usa la dirección anónima de GitHub solo para él), pero el
+      próximo proyecto personal volvería a llevar el correo del trabajo en cada commit.
+      Arreglo permanente: GitHub → Settings → Emails → **"Block command line pushes that
+      expose my email"**.
+
+- [ ] **Ocultar la pertenencia a las organizaciones de Enagás**, si no quieres que el
+      perfil público las anuncie. Es por organización:
+      `https://github.com/orgs/NOMBRE/people` → tu fila → visibilidad → Private.
+      Puramente cosmético, no cambia permisos.
+      Organizaciones: `HubDesarrollo`, `enagas-dsi-gdt-msc`,
+      `enagas-dsi-gdt-libraries`, `enagas-dsi-gdt-shared-microservices`,
+      `enagas-dsi-gdt-mrb`.
+
+---
 
 ## Decisiones aplazadas
 
 - [ ] **Segundo adulto en la misma familia.** Se decidió una sola cuenta por familia.
       `families/{familyId}.adultUids` se guarda como lista precisamente para poder
-      añadir al segundo padre más adelante sin migrar nada. Haría falta un código de
-      invitación.
+      añadirlo más adelante sin migrar nada. Haría falta un código de invitación.
 
-- [ ] **Escaneo de código de barras en iPhone.** Queda fuera a propósito: se usa la API
-      `BarcodeDetector` del navegador, que no existe en iOS (Apple obliga a que todos
-      los navegadores usen WebKit, así que Chrome en iPhone tampoco vale). Si algún día
-      hace falta, la solución es añadir la librería ZXing-js por CDN.
+- [ ] **Acceso con el nombre de la familia en vez del correo.** Descartado: expondría un
+      correo a quien acierte el nombre (ver brief §6.0). Si se quiere, es un cambio
+      pequeño y sin migración.
 
-- [x] ~~**Endurecer las reglas de Firestore.**~~ Hecho. Ya exigen sesión iniciada y
-      limitan cada familia a sus propios datos. **Hay que volver a publicarlas** en la
-      consola: Firestore Database → Reglas → pegar `firestore.rules` → Publicar.
-
-- [ ] **Acceso con el nombre de la familia en vez del correo.** Descartado por ahora
-      (expondría un correo a quien acierte el nombre; ver brief §6.0). Si se quiere,
-      es un cambio pequeño y sin migración: escribir la tabla `nombre → correo` y
-      cambiar la pantalla de inicio de sesión.
+- [ ] **Escaneo de código de barras en iPhone.** Fuera a propósito: se usará la API
+      `BarcodeDetector`, que no existe en iOS. Si algún día hace falta, la solución es
+      añadir ZXing-js por CDN.
 
 ## Mantenimiento
 
-- [ ] **Versión del SDK de Firebase fijada en 11.0.2** en `js/store.js` (dos URLs de
-      importación). No hay prisa por actualizar, pero conviene revisarlo de vez en
-      cuando. Se fijó una versión concreta a propósito, para que una actualización de
-      Google no rompa la app sin avisar.
+- [ ] **Versión del SDK de Firebase fijada en 11.0.2** en `js/store.js` (tres URLs de
+      importación). Se fijó a propósito para que una actualización de Google no rompa la
+      app sin avisar. Conviene revisarlo de vez en cuando.
