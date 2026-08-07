@@ -122,7 +122,13 @@ export async function scanBarcode() {
         const soportados = await window.BarcodeDetector.getSupportedFormats();
         const formats = FORMATOS_LIBRO.filter(f => soportados.includes(f));
         if (!formats.length) {
-          status.textContent = 'Este navegador no sabe leer códigos de barras de libros.';
+          // El navegador tiene la API pero solo sabe otros tipos (típicamente
+          // QR). Se deja la lista real en pantalla: es la única forma de saber
+          // si es un problema total o si, por ejemplo, sí lee QR.
+          console.warn('Formatos que sí soporta este navegador:', soportados);
+          status.textContent = soportados.length
+            ? `Este navegador solo sabe leer estos códigos: ${soportados.join(', ')}. Los de libro (EAN/UPC) no están. Puedes escribir el ISBN a mano.`
+            : 'Este navegador no reconoce ningún tipo de código de barras. Puedes escribir el ISBN a mano.';
           return;
         }
         detector = new window.BarcodeDetector({ formats });
