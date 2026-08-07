@@ -168,6 +168,22 @@ limpian las etiquetas HTML, porque algunos registros las traen.
 Esto obligó a añadir **edición de libros**, que no existía: sin ella solo se podría
 poner colección a los libros nuevos.
 
+### 6.06 El número de páginas es solo informativo (regla del proyecto)
+
+**Nada del comportamiento de la app puede depender de `pages`.** Se muestra en la ficha
+y ya está: no condiciona estados, ni validaciones, ni metas, ni insignias.
+
+El motivo es que el dato no es fiable. Google Books devuelve `pageCount: 0` para
+ediciones ilustradas, de coleccionista o poco catalogadas — comprobado con la edición
+MinaLima de Harry Potter — y cifras dudosas en otras. Cualquier automatismo apoyado en
+él se comporta distinto según la edición que se haya elegido en el buscador, que es
+imposible de explicar a quien lo usa.
+
+Hubo una versión que marcaba el libro como terminado sola al llegar a la última página.
+Se retiró: además de apoyarse en ese dato, cambiaba una casilla sin avisar mientras el
+teclado del móvil la tapaba. **Marcar un libro como terminado es siempre una decisión
+explícita.**
+
 ### 6.1 Funcionalidades nuevas
 
 Los requisitos 9–12 no son solo interfaz: obligan a ampliar el modelo. Se decide así:

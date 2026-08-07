@@ -424,13 +424,11 @@ export class LibraryScreen {
     const pageTo = overlay.querySelector('#session-to');
     const finished = overlay.querySelector('#session-finished');
 
-    // Si dice que ha llegado a la última página, damos por hecho que lo terminó.
-    if (book.pages) {
-      pageTo.addEventListener('input', () => {
-        const n = parseInt(pageTo.value, 10);
-        if (Number.isFinite(n) && n >= book.pages) finished.checked = true;
-      });
-    }
+    // Nada se decide por el número de páginas: es solo informativo. El dato que
+    // devuelve Google Books no es de fiar (las ediciones ilustradas o poco
+    // catalogadas dan 0 o cifras raras), y además cambiar una casilla sola,
+    // mientras el teclado la tapa, es justo lo que no debe hacer un formulario.
+    // Marcar un libro como terminado es siempre una decisión explícita.
 
     overlay.querySelector('#discard-session').onclick = async () => {
       overlay.remove();
