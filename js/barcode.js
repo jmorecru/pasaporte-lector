@@ -326,10 +326,18 @@ export async function scanBarcode() {
       } catch (e) { hints = undefined; }   // sin pistas, ZXing prueba todos los formatos
 
       const zxingReader = new ZXing.BrowserMultiFormatReader(hints);
-      // `decode()` es síncrono y lanza si no encuentra nada en ese fotograma;
-      // se envuelve en una promesa solo para que encaje con `iniciarBucle`.
+      // No se usa reader.decode(canvas): por dentro, ZXing solo sabe medir el
+      // tamaño de un <video> o un <img> (mira si es `instanceof` cada uno);
+      // un <canvas> normal no encaja en ninguno de los dos casos, así que su
+      // lienzo interno se queda a tamaño cero y falla siempre, en silencio,
+      // sin lanzar ningún error que lo delate. Se evita del todo pasando los
+      // píxeles en bruto, que no dependen de qué tipo de elemento sea el origen.
       iniciarBucle(canvas => Promise.resolve().then(() => {
-        const resultado = zxingReader.decode(canvas);
+        const ctx = canvas.getContext('2d');
+        const imagen = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const fuente = new ZXing.RGBLuminanceSource(imagen.data, canvas.width, canvas.height);
+        const bitmap = new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(fuente));
+        const resultado = zxingReader.decodeBitmap(bitmap);
         return resultado && resultado.getText ? String(resultado.getText()) : null;
       }));
     })();
