@@ -247,7 +247,11 @@ El libro guarda `currentPage` (marcapáginas, que se propone como página inicia
 
 **Escaneo de código de barras** (requisito 9). El ISBN tecleado es directo: Google Books acepta `q=isbn:9788412345678`.
 
-Para la cámara se usa la API `BarcodeDetector` del navegador, **sin librería externa**. Eso deja fuera el iPhone: Apple obliga a que todos los navegadores de iOS usen su motor WebKit, así que Chrome en iPhone tiene la misma limitación que Safari y no soporta esa API. **Decisión del usuario: con que funcione en Android y Fire es suficiente**, y a cambio nos ahorramos la librería de decodificación por CDN. En iPhone el botón de escanear sencillamente no se ofrece; quedan el título y el ISBN tecleado. Si algún día hace falta en iPhone, la solución es añadir ZXing-js por CDN.
+Para la cámara se intenta primero la API `BarcodeDetector` del navegador, sin coste añadido. Pero su soporte resultó desigual incluso dentro de Android: se detectó en uso real un Fire tablet cuyo Silk expone la clase `BarcodeDetector` pero cuyo `getSupportedFormats()` devuelve una lista **vacía** — no decodifica ningún tipo de código, ni de barras ni QR. Ese caso concreto es indistinguible de "sin cámara" o "permiso denegado" a simple vista; hizo falta instrumentar el propio escáner para que mostrara en pantalla el motivo técnico exacto (sin cámara, cámara ocupada, permiso denegado, o los formatos que sí soporta) antes de poder diagnosticarlo.
+
+**Decisión revisada tras ese hallazgo**: se añade **ZXing** (`@zxing/library`, ~97 KB comprimidos) como segundo motor, cargado desde CDN **solo cuando el nativo falla o no reconoce los formatos de libro**. Un dispositivo con buen soporte nativo (el caso normal en Android) no descarga nada de más. Esto sustituye la decisión original de no usar ninguna librería externa: aquel supuesto —que el soporte nativo en Android/Fire sería suficiente— no se cumplió en la práctica.
+
+El iPhone sigue fuera de los dos motores: Apple obliga a que todos los navegadores de iOS usen su motor WebKit, que no expone la cámara de este modo. En iPhone el botón de escanear sencillamente no se ofrece; quedan el título y el ISBN tecleado.
 
 La cámara además exige HTTPS — GitHub Pages lo da, pero abriendo el fichero en local no funciona.
 

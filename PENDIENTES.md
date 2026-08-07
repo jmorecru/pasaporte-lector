@@ -86,9 +86,13 @@ Para no volver a dudar de si algo se hizo:
       correo a quien acierte el nombre (ver brief §6.0). Si se quiere, es un cambio
       pequeño y sin migración.
 
-- [ ] **Escaneo de código de barras en iPhone.** Fuera a propósito: se usará la API
-      `BarcodeDetector`, que no existe en iOS. Si algún día hace falta, la solución es
-      añadir ZXing-js por CDN.
+- [ ] **Escaneo de código de barras en iPhone.** Fuera a propósito: ni `BarcodeDetector`
+      ni ZXing tienen forma de acceder a la cámara de ese modo en Safari/WebKit.
+
+- [x] ~~**Escaneo de código de barras en Android/Fire sin soporte nativo.**~~ Hecho:
+      se añadió ZXing (`@zxing/library`, CDN) como motor de repuesto, cargado solo
+      cuando el nativo falla. Motivado por un Fire tablet real cuyo Silk no
+      decodificaba ningún formato pese a tener la clase `BarcodeDetector`.
 
 ## Mantenimiento
 

@@ -1,21 +1,71 @@
 // Escaneo del código de barras de un libro con la cámara.
 //
-// Usa BarcodeDetector, la API del propio navegador, sin librerías externas.
-// Eso deja fuera el iPhone: Apple obliga a que todos los navegadores de iOS usen
-// su motor WebKit, que no la implementa, así que Chrome en iPhone tampoco vale.
-// Decisión tomada en el brief: basta con que funcione en Android y Fire, y a
-// cambio nos ahorramos cargar un decodificador por CDN. Donde no hay soporte, el
-// botón sencillamente no se ofrece.
+// Dos motores, por este orden:
 //
-// Requiere HTTPS. En GitHub Pages funciona; abriendo el fichero en local, no.
+// 1. BarcodeDetector, la API del propio navegador. Gratis en peso: no
+//    descarga nada. Pero su soporte es desigual incluso entre navegadores
+//    Android — se comprobó en un Fire tablet real cuyo Silk expone la clase
+//    pero `getSupportedFormats()` devuelve una lista vacía: no decodifica
+//    absolutamente nada, ni códigos de barras ni QR.
+//
+// 2. ZXing (@zxing/library), cargada desde CDN solo si hace falta. Decodifica
+//    el vídeo por software, así que funciona igual en cualquier dispositivo
+//    sea cual sea su soporte nativo. Coste: ~97 KB comprimidos, una sola vez,
+//    y solo para quien realmente necesite este segundo motor — un dispositivo
+//    con buen soporte nativo (el caso normal) no la descarga nunca.
+//
+// El iPhone queda fuera de los dos motores: Apple obliga a que todos los
+// navegadores de iOS usen su motor WebKit, que no expone la cámara para esto
+// del mismo modo. Decisión del brief: basta con que funcione en Android y
+// Fire. Requiere HTTPS en cualquier caso — en GitHub Pages hay; en local, no.
 
 const FORMATOS_LIBRO = ['ean_13', 'ean_8', 'upc_a', 'upc_e'];
+const ZXING_URL = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
 
-/** ¿Puede este navegador escanear? Si no, no enseñamos el botón. */
+/**
+ * ¿Puede este dispositivo intentar escanear? Ya no exige el motor nativo: con
+ * ZXing de repuesto, lo único imprescindible de verdad es poder pedir cámara.
+ */
 export function barcodeAvailable() {
-  return typeof window.BarcodeDetector === 'function'
-    && window.isSecureContext
+  return window.isSecureContext
     && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+}
+
+/** Prepara el motor nativo si existe y sabe leer códigos de libro. Si no, null. */
+async function prepararDetectorNativo() {
+  if (typeof window.BarcodeDetector !== 'function') return null;
+  try {
+    const soportados = await window.BarcodeDetector.getSupportedFormats();
+    const formats = FORMATOS_LIBRO.filter(f => soportados.includes(f));
+    if (!formats.length) {
+      console.warn('BarcodeDetector no reconoce códigos de libro. Formatos que sí soporta:', soportados);
+      return null;
+    }
+    return new window.BarcodeDetector({ formats });
+  } catch (e) {
+    console.warn('BarcodeDetector falló al prepararse, se probará ZXing', e);
+    return null;
+  }
+}
+
+// Se guarda la promesa, no solo el resultado: si dos escaneos se abren
+// seguidos antes de que la primera carga termine, la segunda espera la misma
+// descarga en vez de arrancar una segunda.
+let cargaZXing = null;
+
+/** Descarga ZXing la primera vez que hace falta; luego queda en caché del navegador. */
+function cargarZXing() {
+  if (window.ZXing) return Promise.resolve(window.ZXing);
+  if (!cargaZXing) {
+    cargaZXing = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = ZXING_URL;
+      script.onload = () => resolve(window.ZXing);
+      script.onerror = () => { cargaZXing = null; reject(new Error('No se pudo descargar el decodificador.')); };
+      document.head.appendChild(script);
+    });
+  }
+  return cargaZXing;
 }
 
 /**
@@ -95,10 +145,12 @@ export async function scanBarcode() {
 
   let stream = null;
   let rafId = null;
+  let zxingReader = null;
   let finished = false;
 
   const cleanup = () => {
     if (rafId) clearTimeout(rafId);
+    if (zxingReader) { try { zxingReader.reset(); } catch (e) { /* ya suelto */ } }
     if (stream) stream.getTracks().forEach(t => t.stop());   // apaga la cámara
     overlay.remove();
   };
@@ -115,28 +167,10 @@ export async function scanBarcode() {
     overlay.addEventListener('click', e => { if (e.target === overlay) finish(null); });
 
     (async () => {
-      let detector;
-      try {
-        // Pedimos solo los formatos que soporte el navegador: pasar uno
-        // desconocido hace fallar el constructor entero.
-        const soportados = await window.BarcodeDetector.getSupportedFormats();
-        const formats = FORMATOS_LIBRO.filter(f => soportados.includes(f));
-        if (!formats.length) {
-          // El navegador tiene la API pero solo sabe otros tipos (típicamente
-          // QR). Se deja la lista real en pantalla: es la única forma de saber
-          // si es un problema total o si, por ejemplo, sí lee QR.
-          console.warn('Formatos que sí soporta este navegador:', soportados);
-          status.textContent = soportados.length
-            ? `Este navegador solo sabe leer estos códigos: ${soportados.join(', ')}. Los de libro (EAN/UPC) no están. Puedes escribir el ISBN a mano.`
-            : 'Este navegador no reconoce ningún tipo de código de barras. Puedes escribir el ISBN a mano.';
-          return;
-        }
-        detector = new window.BarcodeDetector({ formats });
-      } catch (e) {
-        console.error('No se pudo preparar el lector', e);
-        status.textContent = 'No se pudo preparar el lector de códigos.';
-        return;
-      }
+      // El motor nativo no necesita cámara para prepararse, así que se intenta
+      // antes de pedir permiso: si existe, nos ahorramos por completo la
+      // descarga de ZXing.
+      const detectorNativo = await prepararDetectorNativo();
 
       // Comprobar si hay cámara detectable antes de pedirla. Sin esto, un
       // dispositivo sin cámara trasera expuesta al navegador hace que
@@ -201,31 +235,76 @@ export async function scanBarcode() {
         return;
       }
 
-      video.srcObject = stream;
-      try { await video.play(); } catch (e) { /* algunos navegadores ya la reproducen solos */ }
-
       await ajustarCamara(stream, overlay);
-      status.textContent = 'Buscando el código…';
 
-      // Analizamos unas 8 veces por segundo, no en cada fotograma. Encadenar
-      // detecciones a 60 fps satura la CPU de una tablet, y de rebote entorpece
-      // al propio enfoque automático de la cámara: sale más a cuenta mirar
-      // menos veces y que cada mirada sea nítida.
-      const tick = async () => {
-        if (finished) return;
-        try {
-          const codes = await detector.detect(video);
-          if (codes && codes.length && codes[0].rawValue) {
-            status.textContent = '¡Código leído!';
-            finish(String(codes[0].rawValue));
-            return;
-          }
-        } catch (e) {
-          // detect() falla si el vídeo aún no tiene fotograma; se reintenta.
+      if (detectorNativo) {
+        iniciarConMotorNativo(detectorNativo, video, stream, status, finish, () => finished);
+        return;
+      }
+
+      // Sin motor nativo utilizable: cargamos ZXing bajo demanda.
+      status.textContent = 'Preparando el lector de códigos…';
+      let ZXing;
+      try {
+        ZXing = await cargarZXing();
+      } catch (e) {
+        console.error(e);
+        status.textContent = 'No se pudo cargar el lector de códigos (revisa la conexión). Puedes escribir el ISBN a mano.';
+        return;
+      }
+      if (finished) return;   // se canceló mientras cargaba
+
+      let hints;
+      try {
+        hints = new Map();
+        hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+          ZXing.BarcodeFormat.EAN_13, ZXing.BarcodeFormat.EAN_8,
+          ZXing.BarcodeFormat.UPC_A, ZXing.BarcodeFormat.UPC_E
+        ]);
+      } catch (e) { hints = undefined; }   // sin pistas, ZXing prueba todos los formatos
+
+      zxingReader = new ZXing.BrowserMultiFormatReader(hints);
+      status.textContent = 'Buscando el código…';
+      zxingReader.decodeFromStream(stream, video, (result, error) => {
+        if (result && result.getText && result.getText()) {
+          status.textContent = '¡Código leído!';
+          finish(String(result.getText()));
         }
-        rafId = setTimeout(tick, 120);
-      };
-      rafId = setTimeout(tick, 120);
+        // Un error "no encontrado en este fotograma" llega en cada intento
+        // fallido: es el funcionamiento normal mientras se busca el código,
+        // no un fallo que haya que contar.
+      }).catch(e => {
+        if (finished) return;
+        console.error('ZXing no pudo leer de la cámara', e);
+        status.textContent = 'No se pudo leer desde la cámara. Puedes escribir el ISBN a mano.';
+      });
     })();
   });
+}
+
+/** Bucle de detección con la API nativa del navegador. */
+function iniciarConMotorNativo(detector, video, stream, status, finish, estaTerminado) {
+  video.srcObject = stream;
+  video.play().catch(() => { /* algunos navegadores ya la reproducen solos */ });
+  status.textContent = 'Buscando el código…';
+
+  // Analizamos unas 8 veces por segundo, no en cada fotograma. Encadenar
+  // detecciones a 60 fps satura la CPU de una tablet, y de rebote entorpece
+  // al propio enfoque automático de la cámara: sale más a cuenta mirar menos
+  // veces y que cada mirada sea nítida.
+  const tick = async () => {
+    if (estaTerminado()) return;
+    try {
+      const codes = await detector.detect(video);
+      if (codes && codes.length && codes[0].rawValue) {
+        status.textContent = '¡Código leído!';
+        finish(String(codes[0].rawValue));
+        return;
+      }
+    } catch (e) {
+      // detect() falla si el vídeo aún no tiene fotograma; se reintenta.
+    }
+    setTimeout(tick, 120);
+  };
+  setTimeout(tick, 120);
 }
