@@ -1,0 +1,59 @@
+rules_version = '2';
+
+// Reglas de seguridad de Firestore para Pasaporte Lector.
+//
+// Cómo aplicarlas: consola de Firebase → Firestore Database → pestaña "Reglas"
+// → pega este contenido → "Publicar".
+//
+// A diferencia de la versión anterior, aquí NO hay acceso anónimo: hay que haber
+// iniciado sesión, y solo se pueden tocar los datos de la propia familia. Se
+// comprueba en el servidor de Google, así que no se puede saltar manipulando la
+// app desde el navegador.
+//
+// El identificador de una familia es el uid del adulto que la creó. Eso permite
+// resolver el caso normal comparando `request.auth.uid` con el familyId, sin
+// leer ningún documento extra. La consulta a /users solo hace falta para un
+// segundo adulto invitado, que hoy no existe pero que el modelo ya admite.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isFamilyMember(familyId) {
+      return signedIn() && (
+        request.auth.uid == familyId ||
+        (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.familyId == familyId
+        )
+      );
+    }
+
+    // Ficha del adulto: solo él la lee y la escribe.
+    match /users/{uid} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    // La familia y todo lo que cuelga de ella.
+    match /families/{familyId} {
+      allow read, write: if isFamilyMember(familyId);
+
+      match /children/{childId} {
+        allow read, write: if isFamilyMember(familyId);
+
+        match /books/{bookId} {
+          allow read, write: if isFamilyMember(familyId);
+        }
+      }
+    }
+
+    // Todo lo demás, denegado. Incluye las colecciones `children` y `config` de
+    // la raíz, que son del modelo antiguo y ya no se usan.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
