@@ -811,6 +811,19 @@ input[type=email], input[type=password]{
 }
 .book-pages{font-size:.78rem;color:var(--ink-soft);}
 
+/* --- Marca de versión (depuración) --- */
+#version-badge{
+  position:fixed;
+  right:6px;
+  bottom:4px;
+  font-family:var(--font-stamp);
+  font-size:.65rem;
+  color:var(--ink-soft);
+  opacity:.55;
+  pointer-events:none;
+  z-index:999;
+}
+
 /* --- Pantalla de configuración pendiente --- */
 .setup-notice{
   border:2px dashed var(--brick);

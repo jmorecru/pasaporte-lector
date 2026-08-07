@@ -8,8 +8,18 @@
 
 import { isPlaceholderConfig } from './firebase-config.js';
 import { escapeHtml, describeError } from './util.js';
+import { APP_VERSION } from './version.js';
 
 const root = document.getElementById('root');
+
+// Se pinta fuera de #root y antes que nada, para que quede visible en
+// cualquier pantalla y en cualquier código de error, incluido el aviso de
+// configuración pendiente. Si el número no coincide con lo último publicado,
+// el problema es la caché del dispositivo, no el servidor.
+const versionBadge = document.createElement('div');
+versionBadge.id = 'version-badge';
+versionBadge.textContent = `v${APP_VERSION}`;
+document.body.appendChild(versionBadge);
 
 // Si la configuración de Firebase sigue con los marcadores de posición, no
 // llegamos ni a cargar el SDK: explicamos qué falta en vez de reventar.
