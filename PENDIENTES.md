@@ -37,12 +37,10 @@ Para no volver a dudar de si algo se hizo:
 
 ### Seguridad y limpieza
 
-- [ ] **Confirmar si la restricción de la clave de Books hace algo.** Se restringió a
-      los dominios `https://jmorecru.github.io/*` y `http://localhost:8000/*`, pero al
-      probarla 25 minutos después seguía aceptando peticiones sin `referer` y con
-      `referer` de terceros. O tarda más en propagarse, o la API de Books no aplica
-      restricciones de aplicación. Si es lo segundo, no hay arreglo: solo saberlo.
-      Riesgo real si no funciona: que alguien gaste las 1.000 búsquedas diarias.
+- [x] ~~**Restringir la clave de Google Books por dominio.**~~ Hecho y **verificado** el
+      7/8/2026: peticiones sin `referer` o con `referer` de terceros → bloqueadas;
+      desde `jmorecru.github.io` y `localhost:8000` → permitidas. Si alguien copia la
+      clave del código publicado, no le sirve de nada.
 
 - [ ] **Cerrar los dos avisos de secret scanning de GitHub** como *Won't fix*, con el
       motivo "clave de navegador, pública por diseño; protegida por las reglas de
