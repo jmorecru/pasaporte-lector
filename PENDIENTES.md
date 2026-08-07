@@ -86,8 +86,20 @@ Para no volver a dudar de si algo se hizo:
       correo a quien acierte el nombre (ver brief §6.0). Si se quiere, es un cambio
       pequeño y sin migración.
 
-- [ ] **Escaneo de código de barras en iPhone.** Fuera a propósito: ni `BarcodeDetector`
-      ni ZXing tienen forma de acceder a la cámara de ese modo en Safari/WebKit.
+- [x] ~~**Escaneo de código de barras en iPhone.**~~ Sí funciona, verificado en un
+      iPhone real: ZXing solo necesita `getUserMedia`, que Safari sí tiene. Lo que
+      no existe en WebKit es la clase `BarcodeDetector`, y por eso ya no hace falta.
+
+- [ ] **Código de barras pequeño en el encuadre en un Fire tablet concreto.** Con la
+      cámara enfocada, el código sale legible pero demasiado pequeño para que el
+      decodificador lo lea. Se probó un recorte digital del centro del fotograma
+      para "acercarlo" por software, pero **se revirtió**: rompió el escaneo en un
+      iPhone donde antes funcionaba (el recorte daba por hecho una relación entre
+      el vídeo en bruto y el recuadro visual que no se cumple igual en todos los
+      dispositivos). Queda sin arreglar en ese Fire tablet concreto; el ISBN
+      tecleado sigue siendo la vía completa ahí. Si se retoma, probar primero en
+      un dispositivo de escritorio con cámara antes de publicar, no a ciegas contra
+      los dispositivos de la familia.
 
 - [x] ~~**Escaneo de código de barras en Android/Fire sin soporte nativo.**~~ Hecho:
       se añadió ZXing (`@zxing/library`, CDN) como motor de repuesto, cargado solo
