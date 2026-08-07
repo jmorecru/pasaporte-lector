@@ -88,12 +88,11 @@ async function ajustarCamara(stream, overlay) {
   if (Array.isArray(caps.focusMode) && caps.focusMode.includes('continuous')) {
     avanzado.push({ focusMode: 'continuous' });
   }
-  // Un poco de zoom óptico ayuda: llena el encuadre con el código sin tener que
-  // acercar tanto el libro como para que la cámara ya no enfoque.
-  if (caps.zoom && caps.zoom.min != null && caps.zoom.max != null) {
-    const zoom = Math.min(caps.zoom.max, Math.max(caps.zoom.min, 1.5));
-    avanzado.push({ zoom });
-  }
+  // Nada de zoom automático: la API no distingue zoom óptico de digital, y en
+  // tablets sin zoom óptico de verdad (lo habitual) recortar y estirar la
+  // imagen añade borrosidad justo en las líneas finas de un código de barras
+  // — se detectó exactamente ese síntoma en un Fire tablet real. Mejor un
+  // encuadre algo más pequeño y nítido que uno grande y emborronado.
   if (avanzado.length) {
     try { await track.applyConstraints({ advanced: avanzado }); } catch (e) { /* opcional */ }
   }
