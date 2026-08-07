@@ -22,10 +22,48 @@ export class AdminScreen {
     this.onOpenChild = onOpenChild;
     this.onFamilyChange = onFamilyChange;
     this.error = null;
+    this.reservas = new Map();     // childId → libros pedidos
+    this.unsubReservas = [];
   }
 
-  mount() { this.render(); }
-  destroy() {}
+  mount() {
+    this.render();
+    this.escucharReservas();
+  }
+
+  /** La lista de hijos ha cambiado: hay que rehacer las escuchas por niño. */
+  onChildrenChanged() {
+    this.escucharReservas();
+    this.render();
+  }
+
+  destroy() {
+    this.unsubReservas.forEach(u => u());
+    this.unsubReservas = [];
+  }
+
+  /**
+   * Escucha las peticiones de biblioteca de cada hijo.
+   *
+   * Se rehace cuando cambia la lista de hijos, porque hay una escucha por niño.
+   * Con dos o tres hijos el coste es despreciable, y evita duplicar el id de la
+   * familia dentro de cada libro solo para poder hacer una consulta global.
+   */
+  escucharReservas() {
+    this.unsubReservas.forEach(u => u());
+    this.unsubReservas = [];
+    this.getChildren().forEach(child => {
+      const unsub = store.subscribeReservedBooks(
+        this.family.id, child.id,
+        libros => {
+          this.reservas.set(child.id, libros);
+          this.render();
+        },
+        () => { /* si falla, la sección simplemente no aparece */ }
+      );
+      this.unsubReservas.push(unsub);
+    });
+  }
 
   render() {
     const children = this.getChildren();
@@ -42,6 +80,8 @@ export class AdminScreen {
           <h2>Gestión</h2>
           <span class="stamp-count">${escapeHtml(this.family.name || 'Mi familia')}</span>
         </div>
+
+        ${this.reservasHtml(children)}
 
         <h3 class="section-title">Pasaportes</h3>
         <div class="admin-list">
@@ -73,6 +113,35 @@ export class AdminScreen {
     this.bindEvents();
   }
 
+  /** Libros que los hijos han pedido reservar, de todos los pasaportes juntos. */
+  reservasHtml(children) {
+    const pedidos = [];
+    children.forEach(child => {
+      (this.reservas.get(child.id) || []).forEach(libro => pedidos.push({ child, libro }));
+    });
+    if (!pedidos.length) return '';
+    // Los más antiguos primero: son los que llevan más tiempo esperando.
+    pedidos.sort((a, b) => (a.libro.reservedAt || 0) - (b.libro.reservedAt || 0));
+
+    return `
+      <h3 class="section-title">🏛 Pedir en la biblioteca (${pedidos.length})</h3>
+      <div class="admin-list">
+        ${pedidos.map(({ child, libro }) => `
+          <div class="admin-row">
+            <span class="child-dot" style="background:${escapeHtml(child.color || '#2F6F62')};"></span>
+            <div class="admin-row-main">
+              <p class="admin-row-title">${escapeHtml(libro.title)}</p>
+              <p class="admin-row-sub">Lo quiere ${escapeHtml(child.name)}${
+                libro.author ? ' · ' + escapeHtml(libro.author) : ''
+              }</p>
+            </div>
+            <button class="icon-btn" data-reserva-hecha="${child.id}|${libro.id}">✔ Conseguido</button>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
   childRow(c) {
     const color = c.color || PALETTE[0];
     return `
@@ -95,6 +164,25 @@ export class AdminScreen {
     this.root.querySelector('#btn-add-child').onclick = () => this.openChildSheet(null);
     this.root.querySelector('#btn-edit-family').onclick = () => this.openFamilyNameSheet();
     this.root.querySelector('#btn-edit-pin').onclick = () => this.openPinSheet();
+
+    this.root.querySelectorAll('[data-reserva-hecha]').forEach(btn => {
+      btn.onclick = async () => {
+        const [childId, bookId] = btn.dataset.reservaHecha.split('|');
+        btn.disabled = true;
+        try {
+          // Solo se borra la marca: el libro sigue donde estaba en su lectura.
+          await store.updateBook(this.family.id, childId, bookId, {
+            reserved: false,
+            reservedAt: null
+          });
+        } catch (e) {
+          console.error(e);
+          this.error = describeError(e);
+          btn.disabled = false;
+          this.render();
+        }
+      };
+    });
 
     this.root.querySelectorAll('[data-action]').forEach(btn => {
       const child = this.getChildren().find(c => c.id === btn.dataset.id);

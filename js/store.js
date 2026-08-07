@@ -42,6 +42,7 @@ import {
   getDocs,
   onSnapshot,
   query,
+  where,
   orderBy,
   writeBatch
 } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
@@ -201,6 +202,25 @@ export async function updateBook(familyId, childId, bookId, changes) {
 
 export async function deleteBook(familyId, childId, bookId) {
   await deleteDoc(bookDoc(familyId, childId, bookId));
+}
+
+/**
+ * Escucha los libros que un niño ha pedido reservar en la biblioteca.
+ *
+ * Se consulta niño a niño en vez de con una consulta global sobre todos los
+ * libros de la familia: con dos o tres hijos son dos o tres escuchas pequeñas,
+ * y evita tener que duplicar el familyId dentro de cada libro solo para poder
+ * filtrar. Sin `orderBy` a propósito, para no necesitar un índice compuesto;
+ * el orden se pone al mostrarlo.
+ * @returns {() => void} función para cancelar la suscripción.
+ */
+export function subscribeReservedBooks(familyId, childId, onChange, onError) {
+  const q = query(booksCol(familyId, childId), where('reserved', '==', true));
+  return onSnapshot(
+    q,
+    snap => onChange(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+    err => { console.error('Error escuchando reservas', err); onError && onError(err); }
+  );
 }
 
 // ---- Sesiones de lectura ----

@@ -133,7 +133,7 @@ class App {
         this.childrenLoaded = true;
         // Solo repintamos si estamos en una pantalla que depende de la lista.
         if (!this.screen) this.renderWho();
-        else if (this.screen instanceof this.AdminScreen) this.screen.render();
+        else if (this.screen instanceof this.AdminScreen) this.screen.onChildrenChanged();
       },
       err => this.renderFatal('No se pudieron cargar los pasaportes.', err)
     );

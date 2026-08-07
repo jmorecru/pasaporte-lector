@@ -184,6 +184,46 @@ Se retiró: además de apoyarse en ese dato, cambiaba una casilla sin avisar mie
 teclado del móvil la tapaba. **Marcar un libro como terminado es siempre una decisión
 explícita.**
 
+### 6.07 Peticiones a la biblioteca
+
+Un hijo puede añadir un libro que todavía no tiene y pulsar **"Pedir a la biblioteca"**.
+Al adulto le aparece en su panel una lista con el título y **qué hijo lo quiere**, y al
+conseguirlo lo marca como hecho.
+
+Se modela como una marca aparte (`reserved`, `reservedAt`), **no** como un cuarto estado
+de lectura. Un libro pedido sigue siendo "pendiente": si fuera un estado, al conseguirlo
+habría que adivinar a cuál volver, y un libro que ya se está leyendo no podría pedirse.
+En pantalla se ve como una insignia bien visible, que es lo que importa a quien lo usa.
+
+La lista del adulto se arma con una escucha por hijo (`where('reserved','==',true)`) en
+vez de una consulta global. Con dos o tres hijos el coste es despreciable, y evita tener
+que duplicar el `familyId` dentro de cada libro solo para poder filtrar. Sin `orderBy`
+a propósito, para no necesitar un índice compuesto: se ordena al mostrarlo, los más
+antiguos primero.
+
+### 6.08 Sonido ambiente para leer
+
+Lluvia, mar y bosque, **generados en el navegador** con Web Audio. No se descarga ningún
+fichero: el sonido se fabrica a partir de ruido filtrado. Eso resuelve tres cosas a la
+vez — no añade peso a la web, no hay licencias de audio que revisar, y el bucle no tiene
+costura porque no hay bucle.
+
+Se descartó el ambiente de cafetería: las voces de fondo son justo lo que más distrae al
+leer.
+
+Honestidad sobre la calidad: agua es esencialmente ruido con un filtrado concreto, así
+que lluvia y mar salen convincentes. El bosque es más difícil porque los pájaros no son
+ruido; se sintetizan como silbidos cortos, agradables pero reconocibles como artificiales.
+
+Va en un botón aparte, **no atado al cronómetro**: decisión del usuario, para que poner
+música sea siempre una elección y no una sorpresa al empezar a leer. Se calla al salir
+del pasaporte.
+
+Limitación conocida: el navegador suspende el audio cuando la página deja de verse, así
+que es previsible que se pare al bloquear la pantalla. Si molesta en la práctica, el paso
+siguiente es generar el sonido una vez y reproducirlo con un `<audio>` normal, que sí
+sigue con la pantalla apagada — sin volver a descargar nada.
+
 ### 6.1 Funcionalidades nuevas
 
 Los requisitos 9–12 no son solo interfaz: obligan a ampliar el modelo. Se decide así:

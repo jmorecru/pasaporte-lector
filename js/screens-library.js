@@ -14,6 +14,7 @@ import {
   looksLikeIsbn, normalizeIsbn, formatMinutes, formatChrono
 } from './util.js';
 import { barcodeAvailable, scanBarcode } from './barcode.js';
+import { ambiente, SONIDOS } from './ambient.js';
 
 const STATUS_LABELS = { pendiente: 'Pendiente', leyendo: 'Leyendo', terminado: 'Terminado' };
 const SIN_COLECCION = '__sin-coleccion__';   // valor imposible de teclear
@@ -70,6 +71,9 @@ export class LibraryScreen {
     if (this.unsubSessions) { this.unsubSessions(); this.unsubSessions = null; }
     clearTimeout(this.searchDebounce);
     clearInterval(this.chronoTimer);
+    // Al salir del pasaporte se calla: el sonido acompaña a la lectura, y
+    // seguir sonando en la pantalla de "¿Quién eres?" sería desconcertante.
+    ambiente.parar();
   }
 
   // ---- Colecciones y etiquetas ----
@@ -137,6 +141,9 @@ export class LibraryScreen {
       ${this.syncError ? `<div class="sync-banner visible">⚠ Sin sincronizar: ${escapeHtml(this.syncError)}</div>` : ''}
       <div class="screen-bar">
         <button class="link-btn" id="btn-exit">‹ Cambiar de lector</button>
+        <button class="link-btn ${ambiente.sonando ? 'sounding' : ''}" id="btn-sound">
+          ${ambiente.sonando ? '🔊 Sonido' : '🎵 Sonido'}
+        </button>
       </div>
       <div class="panel">
         <div class="child-heading">
@@ -212,6 +219,7 @@ export class LibraryScreen {
         </div>
         <div class="book-meta">
           <span class="badge ${b.status}">${STATUS_LABELS[b.status]}</span>
+          ${b.reserved ? `<span class="badge reservado">🏛 Reservado</span>` : ''}
           ${stars ? `<span class="stars">${stars}</span>` : ''}
           ${b.pages ? `<span class="book-pages">${b.pages} páginas</span>` : ''}
         </div>
@@ -223,6 +231,9 @@ export class LibraryScreen {
           ${b.status !== 'leyendo' ? `<button class="icon-btn" data-action="set-status" data-id="${b.id}" data-status="leyendo">▶ Marcar leyendo</button>` : ''}
           ${b.status !== 'terminado' ? `<button class="icon-btn" data-action="set-status" data-id="${b.id}" data-status="terminado">✔ Marcar terminado</button>` : ''}
           ${b.status !== 'pendiente' ? `<button class="icon-btn" data-action="set-status" data-id="${b.id}" data-status="pendiente">⏸ Pendiente</button>` : ''}
+          ${b.status !== 'terminado' ? (b.reserved
+            ? `<button class="icon-btn" data-action="unreserve" data-id="${b.id}">✖ Ya no lo quiero</button>`
+            : `<button class="icon-btn" data-action="reserve" data-id="${b.id}">🏛 Pedir a la biblioteca</button>`) : ''}
           <button class="icon-btn" data-action="edit-book" data-id="${b.id}">✏ Editar</button>
           <button class="icon-btn danger" data-action="delete-book" data-id="${b.id}">🗑 Borrar</button>
         </div>
@@ -270,8 +281,60 @@ export class LibraryScreen {
     this.chronoTimer = setInterval(tick, 1000);
   }
 
+  /** Elegir sonido ambiente. Arranca desde la pulsación: los móviles no dejan sonar nada sin un gesto. */
+  openSoundSheet() {
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    overlay.innerHTML = `
+      <div class="sheet">
+        <h3>Sonido para leer</h3>
+        <p class="field-hint">Se genera en el momento, no se descarga nada.</p>
+        <div class="sound-grid">
+          ${SONIDOS.map(s => `
+            <button class="sound-card ${ambiente.sonando === s.id ? 'active' : ''}" data-sound="${s.id}">
+              <span class="sound-emoji">${s.emoji}</span>
+              <span>${escapeHtml(s.etiqueta)}</span>
+            </button>`).join('')}
+          <button class="sound-card ${!ambiente.sonando ? 'active' : ''}" data-sound="">
+            <span class="sound-emoji">🔇</span>
+            <span>Silencio</span>
+          </button>
+        </div>
+
+        <label for="sound-volume">Volumen</label>
+        <input type="range" id="sound-volume" min="0" max="100" value="${Math.round(ambiente.volumen * 100)}">
+
+        <p class="field-hint">Puede pararse si bloqueas la pantalla: el navegador apaga el sonido cuando la página deja de verse.</p>
+        <div class="sheet-actions">
+          <button class="btn-secondary" id="close-sound">Cerrar</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    const cerrar = () => { overlay.remove(); this.render(); };
+    overlay.querySelector('#close-sound').onclick = cerrar;
+    overlay.addEventListener('click', e => { if (e.target === overlay) cerrar(); });
+
+    overlay.querySelector('#sound-volume').oninput = e => {
+      ambiente.setVolumen(Number(e.target.value) / 100);
+    };
+
+    overlay.querySelectorAll('[data-sound]').forEach(btn => {
+      btn.onclick = async () => {
+        const id = btn.dataset.sound;
+        if (!id) ambiente.parar();
+        else await ambiente.reproducir(id);
+        overlay.querySelectorAll('.sound-card').forEach(c => {
+          c.classList.toggle('active', c.dataset.sound === (ambiente.sonando || ''));
+        });
+      };
+    });
+  }
+
   bindEvents() {
     this.root.querySelector('#btn-exit').onclick = () => this.onExit();
+    this.root.querySelector('#btn-sound').onclick = () => this.openSoundSheet();
     this.root.querySelector('#btn-add-book').onclick = () => this.openBookSheet(null);
 
     this.root.querySelectorAll('.filter-btn').forEach(btn => {
@@ -314,6 +377,12 @@ export class LibraryScreen {
     this.root.querySelectorAll('[data-action="sessions"]').forEach(btn => {
       btn.onclick = () => this.openSessionsSheet(btn.dataset.id);
     });
+    this.root.querySelectorAll('[data-action="reserve"]').forEach(btn => {
+      btn.onclick = () => this.setReserved(btn.dataset.id, true);
+    });
+    this.root.querySelectorAll('[data-action="unreserve"]').forEach(btn => {
+      btn.onclick = () => this.setReserved(btn.dataset.id, false);
+    });
 
     this.startChronoTicking();
   }
@@ -349,6 +418,23 @@ export class LibraryScreen {
     console.error(message, err);
     this.syncError = message;
     this.render();
+  }
+
+  /**
+   * Pide (o retira la petición de) que un adulto reserve el libro en la
+   * biblioteca. Es una marca aparte, no un estado de lectura: un libro pedido
+   * sigue estando pendiente, y cuando el adulto lo consigue solo se borra la
+   * marca, sin tocar por dónde iba la lectura.
+   */
+  async setReserved(bookId, reserved) {
+    try {
+      await store.updateBook(this.familyId, this.child.id, bookId, {
+        reserved,
+        reservedAt: reserved ? Date.now() : null
+      });
+    } catch (e) {
+      this.reportError('No se pudo enviar la petición.', e);
+    }
   }
 
   // ---- Sesiones de lectura ----
