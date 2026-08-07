@@ -19,6 +19,54 @@ export function barcodeAvailable() {
 }
 
 /**
+ * Saca de la cámara lo mejor que sepa dar para leer un código de barras.
+ *
+ * Por defecto muchas cámaras arrancan con enfoque fijo o de un solo disparo, y
+ * en primeros planos se quedan borrosas: es lo que obliga a bailar con el libro
+ * hasta que engancha. Pedir enfoque continuo lo corrige donde esté disponible.
+ * Todo esto es opcional en la especificación, así que se aplica lo que haya y se
+ * ignora en silencio lo que no: nada de esto debe impedir escanear.
+ */
+async function ajustarCamara(stream, overlay) {
+  const track = stream.getVideoTracks()[0];
+  if (!track || typeof track.getCapabilities !== 'function') return;
+
+  let caps = {};
+  try { caps = track.getCapabilities() || {}; } catch (e) { return; }
+
+  const avanzado = [];
+  if (Array.isArray(caps.focusMode) && caps.focusMode.includes('continuous')) {
+    avanzado.push({ focusMode: 'continuous' });
+  }
+  // Un poco de zoom óptico ayuda: llena el encuadre con el código sin tener que
+  // acercar tanto el libro como para que la cámara ya no enfoque.
+  if (caps.zoom && caps.zoom.min != null && caps.zoom.max != null) {
+    const zoom = Math.min(caps.zoom.max, Math.max(caps.zoom.min, 1.5));
+    avanzado.push({ zoom });
+  }
+  if (avanzado.length) {
+    try { await track.applyConstraints({ advanced: avanzado }); } catch (e) { /* opcional */ }
+  }
+
+  // Linterna, si la hay: los códigos en papel satinado se leen fatal a contraluz.
+  if (caps.torch) {
+    const boton = document.createElement('button');
+    boton.type = 'button';
+    boton.className = 'btn-torch';
+    boton.textContent = '🔦 Luz';
+    let encendida = false;
+    boton.onclick = async () => {
+      encendida = !encendida;
+      try {
+        await track.applyConstraints({ advanced: [{ torch: encendida }] });
+        boton.classList.toggle('on', encendida);
+      } catch (e) { console.warn('La linterna no respondió', e); }
+    };
+    overlay.querySelector('.scanner-video-wrap').appendChild(boton);
+  }
+}
+
+/**
  * Abre la cámara y resuelve con el código leído, o con null si se cancela o
  * falla. Nunca lanza: los errores se cuentan en pantalla.
  */
@@ -34,7 +82,7 @@ export async function scanBarcode() {
         <div class="scanner-frame"></div>
       </div>
       <p class="scanner-status" id="scanner-status">Pidiendo permiso para usar la cámara…</p>
-      <p class="field-hint">Apunta al código de barras de la contraportada. Se lee solo.</p>
+      <p class="field-hint">Apunta al código de barras de la contraportada, a unos 15&nbsp;cm y con buena luz. Se lee solo.</p>
       <div class="sheet-actions">
         <button class="btn-secondary" id="scanner-cancel">Cancelar</button>
       </div>
@@ -50,7 +98,7 @@ export async function scanBarcode() {
   let finished = false;
 
   const cleanup = () => {
-    if (rafId) cancelAnimationFrame(rafId);
+    if (rafId) clearTimeout(rafId);
     if (stream) stream.getTracks().forEach(t => t.stop());   // apaga la cámara
     overlay.remove();
   };
@@ -86,7 +134,14 @@ export async function scanBarcode() {
 
       try {
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: { ideal: 'environment' } }   // cámara trasera
+          video: {
+            facingMode: { ideal: 'environment' },   // cámara trasera
+            // Un código de barras es un patrón fino: con la resolución por
+            // defecto (a menudo 640x480) las barras se emborronan y hay que
+            // acercarse mucho. Pidiendo más píxeles se lee desde más lejos.
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          }
         });
       } catch (e) {
         console.error('Cámara no disponible', e);
@@ -98,8 +153,14 @@ export async function scanBarcode() {
 
       video.srcObject = stream;
       try { await video.play(); } catch (e) { /* algunos navegadores ya la reproducen solos */ }
+
+      await ajustarCamara(stream, overlay);
       status.textContent = 'Buscando el código…';
 
+      // Analizamos unas 8 veces por segundo, no en cada fotograma. Encadenar
+      // detecciones a 60 fps satura la CPU de una tablet, y de rebote entorpece
+      // al propio enfoque automático de la cámara: sale más a cuenta mirar
+      // menos veces y que cada mirada sea nítida.
       const tick = async () => {
         if (finished) return;
         try {
@@ -112,9 +173,9 @@ export async function scanBarcode() {
         } catch (e) {
           // detect() falla si el vídeo aún no tiene fotograma; se reintenta.
         }
-        rafId = requestAnimationFrame(tick);
+        rafId = setTimeout(tick, 120);
       };
-      rafId = requestAnimationFrame(tick);
+      rafId = setTimeout(tick, 120);
     })();
   });
 }

@@ -449,6 +449,21 @@ textarea{resize:vertical;min-height:60px;}
   border-radius:8px;
   box-shadow:0 0 0 100vmax rgba(0,0,0,.35);
 }
+.btn-torch{
+  position:absolute;
+  right:10px;
+  bottom:10px;
+  border:none;
+  background:rgba(0,0,0,.55);
+  color:#fff;
+  padding:8px 12px;
+  border-radius:999px;
+  font-family:var(--font-body);
+  font-weight:700;
+  font-size:.8rem;
+  cursor:pointer;
+}
+.btn-torch.on{background:var(--gold);color:var(--ink);}
 .scanner-status{
   font-family:var(--font-stamp);
   font-size:.82rem;
