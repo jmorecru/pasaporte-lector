@@ -132,22 +132,66 @@ export async function scanBarcode() {
         return;
       }
 
+      // Comprobar si hay cámara detectable antes de pedirla. Sin esto, un
+      // dispositivo sin cámara trasera expuesta al navegador hace que
+      // getUserMedia falle (o se quede colgado) sin más pista que "pantalla
+      // en negro", que es indistinguible de un permiso denegado a simple vista.
       try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: { ideal: 'environment' },   // cámara trasera
-            // Un código de barras es un patrón fino: con la resolución por
-            // defecto (a menudo 640x480) las barras se emborronan y hay que
-            // acercarse mucho. Pidiendo más píxeles se lee desde más lejos.
-            width: { ideal: 1920 },
-            height: { ideal: 1080 }
+        if (navigator.mediaDevices.enumerateDevices) {
+          const dispositivos = await navigator.mediaDevices.enumerateDevices();
+          const camaras = dispositivos.filter(d => d.kind === 'videoinput');
+          if (!camaras.length) {
+            status.textContent = 'Este dispositivo no tiene ninguna cámara accesible desde el navegador. Puedes escribir el ISBN a mano.';
+            return;
           }
-        });
+        }
+      } catch (e) {
+        // enumerateDevices sin permiso previo puede fallar o venir vacío en
+        // algunos navegadores; no es motivo para rendirse, seguimos e
+        // intentamos getUserMedia igualmente.
+      }
+
+      // Si getUserMedia ni concede ni deniega en un tiempo razonable, hay que
+      // dejar de esperar y decirlo: quedarse colgado en "Pidiendo permiso…"
+      // para siempre es indistinguible de que la app se haya congelado.
+      const ATASCADO = Symbol('atascado');
+      const conLimite = (promesa, ms) => Promise.race([
+        promesa,
+        new Promise(r => setTimeout(() => r(ATASCADO), ms))
+      ]);
+
+      try {
+        const resultado = await conLimite(
+          navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: { ideal: 'environment' },   // cámara trasera
+              // Un código de barras es un patrón fino: con la resolución por
+              // defecto (a menudo 640x480) las barras se emborronan y hay que
+              // acercarse mucho. Pidiendo más píxeles se lee desde más lejos.
+              width: { ideal: 1920 },
+              height: { ideal: 1080 }
+            }
+          }),
+          8000
+        );
+        if (resultado === ATASCADO) {
+          status.textContent = 'La cámara no responde en este navegador (se quedó esperando permiso sin preguntar). Puedes escribir el ISBN a mano.';
+          return;
+        }
+        stream = resultado;
       } catch (e) {
         console.error('Cámara no disponible', e);
-        status.textContent = e && e.name === 'NotAllowedError'
-          ? 'No has dado permiso para usar la cámara. Puedes escribir el ISBN a mano.'
-          : 'No se pudo abrir la cámara. Puedes escribir el ISBN a mano.';
+        const nombre = (e && e.name) || 'desconocido';
+        const mensajes = {
+          NotAllowedError: 'No has dado permiso para usar la cámara.',
+          NotFoundError: 'No se ha encontrado ninguna cámara en este dispositivo.',
+          NotReadableError: 'La cámara está en uso por otra aplicación ahora mismo.',
+          OverconstrainedError: 'La cámara de este dispositivo no cumple lo que se le pide.',
+          SecurityError: 'El navegador ha bloqueado el acceso a la cámara por seguridad.'
+        };
+        // El nombre técnico se deja siempre visible, aunque el mensaje sea
+        // genérico: es lo que permite identificar un caso nuevo sin adivinar.
+        status.textContent = `${mensajes[nombre] || 'No se pudo abrir la cámara.'} Puedes escribir el ISBN a mano. (${nombre})`;
         return;
       }
 
