@@ -22,6 +22,17 @@ export const SONIDOS = [
 
 const CLAVE_VOLUMEN = 'pasaporte-volumen';
 
+// Nivel de mezcla de cada sonido. Existe porque el oído no juzga el volumen por
+// la energía de la señal: la lluvia concentra la suya en agudos, donde oímos
+// mejor, mientras que el mar y el viento viven en graves y se perciben mucho más
+// flojos con la misma amplitud. Estos números igualan lo que se oye, no lo que
+// mide el aparato, y son el sitio donde tocar si un sonido queda descompensado.
+const NIVEL = {
+  lluvia: 0.85,
+  mar: 2.2,
+  bosque: 1.9
+};
+
 /** Ruido blanco: base de la lluvia y de las hojas. */
 function bufferRuidoBlanco(ctx, segundos = 4) {
   const largo = Math.floor(ctx.sampleRate * segundos);
@@ -49,6 +60,7 @@ export class Ambiente {
   constructor() {
     this.ctx = null;
     this.master = null;
+    this.bus = null;        // nivel de mezcla del sonido activo
     this.nodos = [];        // todo lo que hay que parar al cambiar de sonido
     this.temporizadores = [];
     this.actual = null;
@@ -76,6 +88,9 @@ export class Ambiente {
 
     this.parar();
     this.actual = id;
+    // Cada sonido cuelga de su propio nivel de mezcla, y este del volumen general.
+    this.bus = this.ganancia(NIVEL[id] || 1);
+    this.bus.connect(this.master);
     if (id === 'lluvia') this.lluvia();
     else if (id === 'mar') this.mar();
     else if (id === 'bosque') this.bosque();
@@ -87,6 +102,7 @@ export class Ambiente {
     this.temporizadores = [];
     this.nodos.forEach(n => { try { n.stop(); } catch (e) { /* ya parado */ } });
     this.nodos = [];
+    if (this.bus) { try { this.bus.disconnect(); } catch (e) { /* ya suelto */ } this.bus = null; }
     this.actual = null;
   }
 
@@ -150,13 +166,13 @@ export class Ambiente {
     const agudo = this.filtro('highpass', 700);
     const suave = this.filtro('lowpass', 6500);
     const vol = this.ganancia(0.55);
-    agudo.connect(suave).connect(vol).connect(this.master);
+    agudo.connect(suave).connect(vol).connect(this.bus);
     this.fuente(blanco, agudo);
 
     // Un fondo grave da sensación de lluvia cercana, no de spray.
     const grave = this.filtro('lowpass', 350);
     const volGrave = this.ganancia(0.3);
-    grave.connect(volGrave).connect(this.master);
+    grave.connect(volGrave).connect(this.bus);
     this.fuente(bufferRuidoMarron(this.ctx), grave);
 
     // Gotas sueltas: sin ellas la lluvia es plana y se nota artificial.
@@ -172,7 +188,7 @@ export class Ambiente {
     env.gain.setValueAtTime(0, t);
     env.gain.linearRampToValueAtTime(0.18 + Math.random() * 0.15, t + 0.004);
     env.gain.exponentialRampToValueAtTime(0.0005, t + 0.07);
-    src.connect(banda).connect(env).connect(this.master);
+    src.connect(banda).connect(env).connect(this.bus);
     src.start(t);
     src.stop(t + 0.09);
   }
@@ -182,77 +198,94 @@ export class Ambiente {
 
     // La ola: ruido grave cuyo volumen sube y baja despacio. Esa respiración
     // lenta es lo que el oído reconoce como mar y no como ruido de fondo.
-    const cuerpo = this.filtro('lowpass', 700);
-    const volOla = this.ganancia(0.25);
-    cuerpo.connect(volOla).connect(this.master);
+    // El corte va más arriba que un mar "de fondo" a propósito: dejarlo en
+    // graves puros lo hacía casi inaudible frente a la lluvia.
+    const cuerpo = this.filtro('lowpass', 1100);
+    const volOla = this.ganancia(0.4);
+    cuerpo.connect(volOla).connect(this.bus);
     this.fuente(marron, cuerpo);
 
     const lfo = this.ctx.createOscillator();
     lfo.frequency.value = 0.09;              // una ola cada 11 segundos
-    const profundidad = this.ganancia(0.35);
+    const profundidad = this.ganancia(0.3);
     lfo.connect(profundidad).connect(volOla.gain);
     lfo.start();
     this.nodos.push(lfo);
 
-    // La espuma: agudos que asoman solo en la cresta de cada ola.
-    const espuma = this.filtro('highpass', 1800);
-    const volEspuma = this.ganancia(0.02);
-    espuma.connect(volEspuma).connect(this.master);
+    // La espuma: agudos que asoman en la cresta de cada ola. Es lo que da la
+    // pista de que hay agua rompiendo y no solo un rumor grave.
+    const espuma = this.filtro('highpass', 1400);
+    const volEspuma = this.ganancia(0.09);
+    espuma.connect(volEspuma).connect(this.bus);
     this.fuente(bufferRuidoBlanco(this.ctx), espuma);
 
     const lfoEspuma = this.ctx.createOscillator();
     lfoEspuma.frequency.value = 0.09;
-    const profEspuma = this.ganancia(0.05);
+    const profEspuma = this.ganancia(0.08);
     lfoEspuma.connect(profEspuma).connect(volEspuma.gain);
     lfoEspuma.start();
     this.nodos.push(lfoEspuma);
   }
 
   bosque() {
-    // Viento entre las ramas: grave y con el filtro moviéndose despacio, para
-    // que parezca que la brisa va y viene.
-    const viento = this.filtro('lowpass', 450);
-    const volViento = this.ganancia(0.3);
-    viento.connect(volViento).connect(this.master);
+    // El viento es el decorado, no el protagonista: se queda bajo y sin llegar
+    // a medios, para que no tape los pájaros ni suene a ventisca.
+    const viento = this.filtro('lowpass', 320);
+    const volViento = this.ganancia(0.12);
+    viento.connect(volViento).connect(this.bus);
     this.fuente(bufferRuidoMarron(this.ctx), viento);
 
     const lfo = this.ctx.createOscillator();
     lfo.frequency.value = 0.06;
-    const barrido = this.ganancia(220);
+    const barrido = this.ganancia(140);
     lfo.connect(barrido).connect(viento.frequency);
     lfo.start();
     this.nodos.push(lfo);
 
-    // Hojas: siseo agudo muy flojo, el detalle que separa un bosque de una cueva.
-    const hojas = this.filtro('bandpass', 3200, 0.8);
-    const volHojas = this.ganancia(0.05);
-    hojas.connect(volHojas).connect(this.master);
+    // Hojas: siseo agudo suave, el detalle que separa un bosque de una cueva.
+    const hojas = this.filtro('bandpass', 3400, 0.7);
+    const volHojas = this.ganancia(0.06);
+    hojas.connect(volHojas).connect(this.bus);
     this.fuente(bufferRuidoBlanco(this.ctx), hojas);
 
-    // Pájaros de vez en cuando. Es la parte más difícil de fingir: son silbidos
-    // sintetizados, agradables, pero no engañan a nadie que escuche con atención.
-    this.cadaTanto(4, 14, () => this.pajaro());
+    // Los pájaros son el bosque. Antes se oían cada 4-14 segundos y muy flojos,
+    // así que lo único constante era el viento y parecía una tormenta lejana.
+    this.cadaTanto(1.4, 5, () => this.pajaro());
   }
 
+  /**
+   * Un canto de varias sílabas. La variedad importa más que el realismo de cada
+   * silbido: un pájaro que repite siempre lo mismo se delata como máquina, y al
+   * alternar cantos cercanos y lejanos parece que hay varios en el bosque.
+   */
   pajaro() {
     const t = this.ctx.currentTime;
-    const silabas = 1 + Math.floor(Math.random() * 3);
-    const base = 1900 + Math.random() * 1300;
+    const silabas = 1 + Math.floor(Math.random() * 4);
+    const base = 1700 + Math.random() * 1800;
+    const lejano = Math.random() < 0.4;              // unos suenan más al fondo
+    const cuerpo = lejano ? 0.09 : 0.22;
+    const separacion = 0.09 + Math.random() * 0.08;
+
     for (let i = 0; i < silabas; i++) {
-      const inicio = t + i * 0.13;
+      const inicio = t + i * separacion;
       const osc = this.ctx.createOscillator();
-      osc.type = 'sine';
-      const f = base * (0.94 + Math.random() * 0.12);
+      osc.type = Math.random() < 0.3 ? 'triangle' : 'sine';
+      const f = base * (0.9 + Math.random() * 0.2);
+      // El barrido de frecuencia es lo que convierte un pitido en un trino.
       osc.frequency.setValueAtTime(f, inicio);
-      osc.frequency.exponentialRampToValueAtTime(f * 1.5, inicio + 0.05);
-      osc.frequency.exponentialRampToValueAtTime(f * 0.95, inicio + 0.1);
+      osc.frequency.exponentialRampToValueAtTime(f * (1.3 + Math.random() * 0.5), inicio + 0.045);
+      osc.frequency.exponentialRampToValueAtTime(f * 0.92, inicio + 0.095);
+
       const env = this.ganancia(0);
       env.gain.setValueAtTime(0, inicio);
-      env.gain.linearRampToValueAtTime(0.06, inicio + 0.012);
-      env.gain.exponentialRampToValueAtTime(0.0005, inicio + 0.11);
-      osc.connect(env).connect(this.master);
+      env.gain.linearRampToValueAtTime(cuerpo, inicio + 0.012);
+      env.gain.exponentialRampToValueAtTime(0.0005, inicio + 0.1);
+
+      // Los lejanos pierden agudos, como pasa con la distancia de verdad.
+      const aire = this.filtro('lowpass', lejano ? 2600 : 9000);
+      osc.connect(env).connect(aire).connect(this.bus);
       osc.start(inicio);
-      osc.stop(inicio + 0.14);
+      osc.stop(inicio + 0.13);
     }
   }
 }
