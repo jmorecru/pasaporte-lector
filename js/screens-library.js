@@ -769,10 +769,21 @@ export class LibraryScreen {
             btn.disabled = true;
             const min = parseInt(btn.dataset.min, 10) || 0;
             const actual = this.books.find(b => b.id === bookId) || book;
+
+            // Sin recalcular esto, borrar la sesión que fijó el marcapáginas
+            // lo dejaba huérfano: seguía señalando una página aunque ya no
+            // quedara ninguna sesión detrás que la respaldara. `sessions` ya
+            // viene ordenada de la más reciente a la más antigua, así que la
+            // primera que tenga página de fin (una vez descartada la que se
+            // borra) es el marcapáginas correcto; si no queda ninguna, se limpia.
+            const restantes = sessions.filter(s => s.id !== btn.dataset.session);
+            const ultimaConPagina = restantes.find(s => s.pageTo != null);
+
             try {
               await store.deleteSession(this.familyId, this.child.id, bookId, btn.dataset.session, {
                 totalMinutes: Math.max(0, (actual.totalMinutes || 0) - min),
-                sessionCount: Math.max(0, (actual.sessionCount || 0) - 1)
+                sessionCount: Math.max(0, (actual.sessionCount || 0) - 1),
+                currentPage: ultimaConPagina ? ultimaConPagina.pageTo : null
               });
             } catch (e) {
               console.error(e);
@@ -987,6 +998,14 @@ export class LibraryScreen {
         <label for="book-pages">Páginas (opcional)</label>
         <input type="number" id="book-pages" min="1" max="3000" value="${book && book.pages ? escapeHtml(book.pages) : ''}">
 
+        ${!isNew ? `
+          <label for="book-current-page">Página actual / marcapáginas (opcional)</label>
+          <input type="number" id="book-current-page" min="0" max="20000"
+                 value="${book && book.currentPage ? escapeHtml(book.currentPage) : ''}">
+          <p class="field-hint">Normalmente lo pone solo el temporizador al terminar una sesión.
+          Corrígelo aquí si queda desajustado, o vacíalo si no quieres marcapáginas.</p>
+        ` : ''}
+
         <label>Valoración (opcional)</label>
         <div class="star-picker" id="star-picker">
           ${[1, 2, 3, 4, 5].map(n => `<span data-n="${n}" class="${rating >= n ? 'on' : ''}">★</span>`).join('')}
@@ -1057,6 +1076,10 @@ export class LibraryScreen {
       const collection = overlay.querySelector('#book-collection').value.trim();
       const tags = parseTags(overlay.querySelector('#book-tags').value);
       const synopsis = overlay.querySelector('#book-synopsis').value.trim();
+      // Solo existe el campo al editar; en libros nuevos no hay marcapáginas
+      // que corregir todavía.
+      const currentPageInput = overlay.querySelector('#book-current-page');
+      const currentPage = currentPageInput ? parseInt(currentPageInput.value, 10) : NaN;
       // La carátula es lo único sin campo editable: viene del buscador o, al
       // editar, de lo que ya tuviera el libro.
       const cover = (this.selectedBookResult && this.selectedBookResult.cover)
@@ -1094,6 +1117,10 @@ export class LibraryScreen {
           if (status !== book.status) {
             fields.finishedAt = status === 'terminado' ? todayISO() : null;
           }
+          // Vacío = sin marcapáginas (null), no "no tocar": es la forma de
+          // limpiar una página que hubiera quedado huérfana por un fallo
+          // anterior, sin depender de borrar y rehacer sesiones.
+          fields.currentPage = Number.isFinite(currentPage) ? currentPage : null;
           await store.updateBook(this.familyId, this.child.id, book.id, fields);
         }
         overlay.remove();

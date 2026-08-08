@@ -7,4 +7,4 @@
 // Se sube a mano en cada despliegue que interese verificar. No hay build
 // tools en este proyecto (a propósito, ver brief §2), así que no se genera
 // solo; simplemente incrementa la letra al final cada vez.
-export const APP_VERSION = '2026-08-08-a';
+export const APP_VERSION = '2026-08-08-b';
