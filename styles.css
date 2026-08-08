@@ -437,6 +437,92 @@ input[type=range]{width:100%;accent-color:var(--teal);margin-top:4px;}
 /* --- Reserva en la biblioteca --- */
 .badge.reservado{background:var(--ink-soft);}
 
+/* --- Metas e insignias --- */
+.badges-btn{
+  border:none;
+  cursor:pointer;
+  font-family:var(--font-stamp);
+}
+.goals-bar{
+  display:flex;
+  gap:6px;
+  flex-wrap:wrap;
+  margin-bottom:12px;
+}
+.goal-chip{
+  font-size:.72rem;
+  font-weight:700;
+  font-family:var(--font-body);
+  padding:4px 10px;
+  border-radius:999px;
+  background:var(--bg);
+  border:1px solid var(--line);
+  color:var(--ink-soft);
+}
+.goal-chip.done{
+  background:var(--teal);
+  border-color:var(--teal);
+  color:#fff;
+}
+
+.badges-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(84px,1fr));
+  gap:10px;
+  margin:14px 0;
+}
+.badge-tile{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:6px;
+  padding:12px 6px;
+  border-radius:12px;
+  background:var(--bg);
+  border:1px solid var(--line);
+  opacity:.55;
+}
+.badge-tile.unlocked{
+  opacity:1;
+  background:var(--paper);
+  border-color:var(--gold);
+  box-shadow:0 2px 6px rgba(201,162,39,.25);
+}
+.badge-tile-emoji{font-size:1.8rem;line-height:1;}
+.badge-tile-label{
+  font-size:.68rem;
+  font-weight:700;
+  text-align:center;
+  color:var(--ink-soft);
+  margin:0;
+  line-height:1.2;
+}
+.badge-tile.unlocked .badge-tile-label{color:var(--ink);}
+
+.badge-celebration{text-align:center;}
+.badge-big{
+  font-size:4rem;
+  line-height:1;
+  margin:6px 0 10px;
+  animation:stampIn .5s ease-out;
+}
+@media (prefers-reduced-motion: reduce){
+  .badge-big{animation:none;}
+}
+.badge-celebration-title{
+  font-family:var(--font-stamp);
+  color:var(--teal-dark);
+  margin:0 0 4px;
+  font-size:.85rem;
+}
+.badge-celebration-name{
+  font-family:var(--font-display);
+  font-weight:700;
+  font-size:1.3rem;
+  color:var(--ink);
+  margin:0 0 18px;
+}
+
 /* --- Temporizador y sesiones de lectura --- */
 .reading-block{
   display:flex;

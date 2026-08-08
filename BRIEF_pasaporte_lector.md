@@ -76,11 +76,21 @@ La app deja de ser "una familia por proyecto". Todo cuelga de la familia:
 users/{uid}                    → { familyId, email }
 families/{familyId}            → { name, adultUids: [uid], adultPin, createdAt }
 families/{familyId}/children/{childId}
-                               → { name, code, color, createdAt }
+                               → { name, code, color, createdAt,
+                                   goals: { dailyMinutes, weeklyMinutes,
+                                            weeklyBooks, monthlyBooks },
+                                   minutesByDay: { 'YYYY-MM-DD': minutos } }
 families/{familyId}/children/{childId}/books/{bookId}
                                → { title, author, pages, cover, description,
                                    collection, tags[], status, rating, notes,
-                                   addedAt, finishedAt }
+                                   addedAt, finishedAt, currentPage,
+                                   totalMinutes, sessionCount, activeSince,
+                                   reserved, reservedAt }
+families/{familyId}/children/{childId}/books/{bookId}/sessions/{sessionId}
+                               → { startedAt, endedAt, minutes,
+                                   pageFrom, pageTo, day }
+families/{familyId}/children/{childId}/badges/{badgeKey}
+                               → { unlockedAt }
 ```
 
 El `familyId` **es el uid del adulto que creó la familia**. Así las reglas de seguridad
@@ -243,7 +253,17 @@ Al parar se propone el tiempo del cronómetro pero **se puede corregir**: nadie 
 
 El libro guarda `currentPage` (marcapáginas, que se propone como página inicial de la siguiente sesión) y además `totalMinutes` y `sessionCount` **duplicados** respecto a las sesiones. Ese duplicado es deliberado y solo de presentación: las metas se calcularán leyendo las sesiones, pero la tarjeta necesita el total para pintarlo y suscribirse a las sesiones de todos los libros solo para eso sería un derroche. Se escribe en el mismo lote que la sesión, así que no pueden desincronizarse.
 
-**Metas e insignias** (requisitos 11–12). Las metas **las fija el adulto**, desde la configuración del perfil de cada niño (detrás del PIN de adulto); el niño las ve y ve su progreso, pero no las cambia. Se guardan como documentos por niño. El progreso se **calcula al vuelo** desde las sesiones y los libros terminados; no se mantiene un contador duplicado, que se desincronizaría. De las insignias sí se guarda la fecha de desbloqueo, para que el momento del logro sea estable y no cambie si luego se corrige una sesión.
+**Metas e insignias** (requisitos 11–12). **Hecho.** Referencia de diseño: Oxford Reading Buddy, la app con la que los hijos del usuario ya leen en inglés en el colegio — insignias con nombres cortos y desenfadados, por hitos de cantidad y de constancia.
+
+**Insignias**: catálogo **fijo**, no configurable, en `js/achievements.js`. 15 insignias en 4 grupos — libros terminados en total (1/5/10/25/50), ritmo (3 libros en una semana, 6 en un mes), minutos acumulados (60/300/1200) y rachas de días seguidos leyendo (3/7/30) — más dos de variedad (3 colecciones distintas, 10 libros valorados). Se guardan como documentos en `children/{childId}/badges/{badgeKey}`, con la clave fija del catálogo como id (evita duplicados) y la fecha de desbloqueo, para que un logro celebrado no se pueda "desconceder" si luego se corrige una sesión antigua.
+
+**Metas**: las fija el adulto por hijo (minutos al día, minutos a la semana, libros a la semana, libros al mes; cada campo opcional). El niño ve su progreso en una barra compacta encima de los filtros de la biblioteca, pero no puede cambiarlas. El progreso se **calcula al vuelo**, nunca se guarda un contador de metas aparte.
+
+**El reto de agregar por fecha sin duplicar todas las sesiones.** Las sesiones viven anidadas bajo cada libro (`books/{bookId}/sessions/{sessionId}`); sumar "minutos leídos esta semana" cruzando TODOS los libros de un niño exigiría una `collectionGroup` query sobre `sessions`, y para acotarla de forma segura por niño en las reglas habría que añadir un campo `childId` a cada sesión (no lo tiene) — más complejidad de la que compensa. Se optó por una vía más simple: `endSession` suma también los minutos de esa sesión a un mapa `children/{childId}.minutesByDay = { 'YYYY-MM-DD': minutos }`, en el mismo lote atómico que ya escribe la sesión y el libro. Con eso, "minutos hoy/esta semana" y las rachas de días se calculan leyendo un único documento (el del niño), sin ninguna query nueva. Los libros terminados por semana/mes se derivan de los libros ya suscritos (`finishedAt`), sin dato adicional.
+
+Al escribir la clave del mapa se usa la notación de punto como campo de primer nivel (`{'minutesByDay.2026-08-07': increment(...)}`), no un objeto anidado: es la única forma **documentada sin ambigüedad** de tocar una sola clave de un mapa con `merge:true` sin arriesgarse a que Firestore sobrescriba el mapa entero — un punto donde la documentación oficial resultó sorprendentemente difícil de citar con precisión, así que se evitó la pregunta por completo en vez de confiar en la respuesta.
+
+**Cuidado con las zonas horarias en la aritmética de fechas.** `minutesByDay` usa claves `YYYY-MM-DD` en hora local (mismo criterio que `session.day`). Comparar esas claves con `new Date(iso)` sería un error sutil: ese constructor interpreta una fecha sin hora como medianoche **UTC**, no local, lo que puede desplazar un día la racha o el corte de semana según la zona horaria de quien lea el código. Se añadió `parseISODate()` en `util.js`, que reconstruye la fecha en local explícitamente. La lógica de racha (cuenta desde hoy hacia atrás, o desde ayer si hoy aún no tiene sesión) y los cortes de semana (lunes) y mes se verificaron con una batería de casos de prueba antes de integrarlos, ya que no hay entorno de Node.js en esta máquina para ejecutar el propio módulo.
 
 **Escaneo de código de barras** (requisito 9). El ISBN tecleado es directo: Google Books acepta `q=isbn:9788412345678`.
 
@@ -267,7 +287,7 @@ La cámara además exige HTTPS — GitHub Pages lo da, pero abriendo el fichero 
 4. ~~Añadir libro por ISBN tecleado.~~ **Hecho.** El buscador detecta si lo tecleado es un ISBN (con verificación del dígito de control) y consulta `q=isbn:...`.
 5. ~~Escaneo de código de barras con cámara.~~ **Hecho**, con `BarcodeDetector`. Pendiente de probar en un dispositivo real con cámara.
 6. ~~Temporizador de lectura + sesiones + marcapáginas.~~ **Hecho.**
-7. Metas e insignias (dependen de que existan sesiones). **Siguiente.**
+7. ~~Metas e insignias.~~ **Hecho.**
 8. ~~Verificar el comportamiento en los tres dispositivos.~~ Probado en iPhone y tablet Android, instalada como app en ambos. Falta la Fire.
 9. ~~Subir el proyecto a GitHub y activar GitHub Pages.~~ **Hecho**: https://jmorecru.github.io/pasaporte-lector/
 10. Probar el flujo completo con cada hijo desde su propio dispositivo.

@@ -51,6 +51,13 @@ service cloud.firestore {
             allow read, write: if isFamilyMember(familyId);
           }
         }
+
+        // Insignias desbloqueadas. Las metas (goals) y los minutos por día
+        // (minutesByDay) no necesitan una regla aparte: son campos del propio
+        // documento del niño, ya cubierto por la regla de arriba.
+        match /badges/{badgeId} {
+          allow read, write: if isFamilyMember(familyId);
+        }
       }
     }
 

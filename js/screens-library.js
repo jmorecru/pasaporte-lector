@@ -15,6 +15,7 @@ import {
 } from './util.js';
 import { barcodeAvailable, scanBarcode } from './barcode.js';
 import { ambiente, SONIDOS } from './ambient.js';
+import { BADGES, resumenLectura, insigniasNuevas } from './achievements.js';
 
 const STATUS_LABELS = { pendiente: 'Pendiente', leyendo: 'Leyendo', terminado: 'Terminado' };
 const SIN_COLECCION = '__sin-coleccion__';   // valor imposible de teclear
@@ -44,6 +45,16 @@ export class LibraryScreen {
     this.unsubscribe = null;
     this.unsubSessions = null;
     this.chronoTimer = null;
+
+    // Metas e insignias.
+    this.childDoc = null;         // trae minutesByDay y goals, en vivo
+    this.badges = [];             // insignias ya desbloqueadas
+    this.badgesLoaded = false;    // hasta que no llegue la primera vez, no se
+                                   // sabe qué está ya desbloqueado, y comprobar
+                                   // insignias "nuevas" antes de tiempo las
+                                   // desbloquearía todas de golpe por error.
+    this.unsubChild = null;
+    this.unsubBadges = null;
   }
 
   mount() {
@@ -56,6 +67,7 @@ export class LibraryScreen {
         this.loading = false;
         this.syncError = null;
         this.pruneFilters();
+        this.comprobarInsignias();
         this.render();
       },
       err => {
@@ -64,16 +76,143 @@ export class LibraryScreen {
         this.render();
       }
     );
+    this.unsubChild = store.subscribeChild(
+      this.familyId,
+      this.child.id,
+      child => {
+        this.childDoc = child;
+        this.comprobarInsignias();
+        this.render();
+      }
+    );
+    this.unsubBadges = store.subscribeBadges(
+      this.familyId,
+      this.child.id,
+      badges => {
+        this.badges = badges;
+        this.badgesLoaded = true;
+        this.comprobarInsignias();
+        this.render();
+      }
+    );
   }
 
   destroy() {
     if (this.unsubscribe) { this.unsubscribe(); this.unsubscribe = null; }
     if (this.unsubSessions) { this.unsubSessions(); this.unsubSessions = null; }
+    if (this.unsubChild) { this.unsubChild(); this.unsubChild = null; }
+    if (this.unsubBadges) { this.unsubBadges(); this.unsubBadges = null; }
     clearTimeout(this.searchDebounce);
     clearInterval(this.chronoTimer);
     // Al salir del pasaporte se calla: el sonido acompaña a la lectura, y
     // seguir sonando en la pantalla de "¿Quién eres?" sería desconcertante.
     ambiente.parar();
+  }
+
+  // ---- Metas e insignias ----
+
+  resumen() {
+    return resumenLectura(this.books, (this.childDoc && this.childDoc.minutesByDay) || {}, new Date());
+  }
+
+  /**
+   * Comprueba si con los datos actuales se ha desbloqueado alguna insignia
+   * nueva y, si es así, la guarda y muestra el sello de celebración.
+   *
+   * Se ejecuta cada vez que cambian los libros, el niño o las insignias ya
+   * conocidas — es barato (son comparaciones en memoria) y así no se necesita
+   * un disparador aparte para cada acción que pueda desbloquear algo.
+   */
+  comprobarInsignias() {
+    if (!this.badgesLoaded || this.loading || !this.childDoc) return;
+    const ctx = this.resumen();
+    const clavesActuales = new Set(this.badges.map(b => b.id));
+    const nuevas = insigniasNuevas(ctx, clavesActuales);
+    if (!nuevas.length) return;
+
+    // Se marcan como desbloqueadas ya mismo (evita volver a intentarlo si
+    // llega otro cambio antes de que el servidor confirme) y se celebra la
+    // primera; el resto, si se han desbloqueado varias a la vez, esperan a
+    // que se cierre la anterior para no amontonar sellos en pantalla.
+    nuevas.forEach(b => this.badges.push({ id: b.key, unlockedAt: Date.now() }));
+    nuevas.forEach(b => store.unlockBadge(this.familyId, this.child.id, b.key).catch(e => console.error(e)));
+    this.celebrarInsignias(nuevas);
+  }
+
+  celebrarInsignias(nuevas) {
+    if (!nuevas.length) return;
+    const [primera, ...resto] = nuevas;
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    overlay.innerHTML = `
+      <div class="sheet badge-celebration">
+        <div class="badge-big">${primera.emoji}</div>
+        <p class="badge-celebration-title">¡Insignia desbloqueada!</p>
+        <p class="badge-celebration-name">${escapeHtml(primera.label)}</p>
+        <button class="btn-confirm" id="badge-celebration-close">¡Genial!</button>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    const cerrar = () => { overlay.remove(); if (resto.length) this.celebrarInsignias(resto); };
+    overlay.querySelector('#badge-celebration-close').onclick = cerrar;
+    overlay.addEventListener('click', e => { if (e.target === overlay) cerrar(); });
+  }
+
+  openBadgesSheet() {
+    const ctx = this.resumen();
+    const desbloqueadas = new Map(this.badges.map(b => [b.id, b]));
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    overlay.innerHTML = `
+      <div class="sheet">
+        <h3>🏅 Insignias (${desbloqueadas.size}/${BADGES.length})</h3>
+        <div class="badges-grid">
+          ${BADGES.map(b => {
+            const lograda = desbloqueadas.get(b.key);
+            return `
+              <div class="badge-tile ${lograda ? 'unlocked' : ''}">
+                <div class="badge-tile-emoji">${lograda ? b.emoji : '🔒'}</div>
+                <p class="badge-tile-label">${escapeHtml(b.label)}</p>
+              </div>
+            `;
+          }).join('')}
+        </div>
+        <div class="sheet-actions">
+          <button class="btn-secondary" id="close-badges">Cerrar</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#close-badges').onclick = () => overlay.remove();
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  }
+
+  /** Barra compacta de metas: solo se muestran las que el adulto haya fijado. */
+  goalsBar() {
+    const goals = (this.childDoc && this.childDoc.goals) || {};
+    const tiene = goals.dailyMinutes || goals.weeklyMinutes || goals.weeklyBooks || goals.monthlyBooks;
+    if (!tiene) return '';
+
+    const ctx = this.resumen();
+    const chips = [];
+    if (goals.dailyMinutes) {
+      chips.push(this.goalChip(ctx.minutosHoy, goals.dailyMinutes, 'min hoy'));
+    }
+    if (goals.weeklyMinutes) {
+      chips.push(this.goalChip(ctx.minutosEstaSemana, goals.weeklyMinutes, 'min esta semana'));
+    }
+    if (goals.weeklyBooks) {
+      chips.push(this.goalChip(ctx.librosEstaSemana, goals.weeklyBooks, 'libros esta semana'));
+    }
+    if (goals.monthlyBooks) {
+      chips.push(this.goalChip(ctx.librosEsteMes, goals.monthlyBooks, 'libros este mes'));
+    }
+    return `<div class="goals-bar">${chips.join('')}</div>`;
+  }
+
+  goalChip(actual, meta, etiqueta) {
+    const cumplida = actual >= meta;
+    return `<span class="goal-chip ${cumplida ? 'done' : ''}">${cumplida ? '✔' : ''} ${actual}/${meta} ${escapeHtml(etiqueta)}</span>`;
   }
 
   // ---- Colecciones y etiquetas ----
@@ -148,8 +287,13 @@ export class LibraryScreen {
       <div class="panel">
         <div class="child-heading">
           <h2 style="color:${escapeHtml(this.child.color || 'inherit')};">${escapeHtml(this.child.name)}</h2>
+          <button class="stamp-count badges-btn" id="btn-badges" title="Ver insignias">
+            🎖️ ${this.badges.length}/${BADGES.length}
+          </button>
           <span class="stamp-count">🏅 ${finished} libro${finished === 1 ? '' : 's'} terminado${finished === 1 ? '' : 's'}</span>
         </div>
+
+        ${this.goalsBar()}
 
         <div class="filters">
           ${this.filterBtn('todos', 'Todos')}
@@ -335,6 +479,7 @@ export class LibraryScreen {
   bindEvents() {
     this.root.querySelector('#btn-exit').onclick = () => this.onExit();
     this.root.querySelector('#btn-sound').onclick = () => this.openSoundSheet();
+    this.root.querySelector('#btn-badges').onclick = () => this.openBadgesSheet();
     this.root.querySelector('#btn-add-book').onclick = () => this.openBookSheet(null);
 
     this.root.querySelectorAll('.filter-btn').forEach(btn => {

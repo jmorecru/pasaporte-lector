@@ -44,7 +44,8 @@ import {
   query,
   where,
   orderBy,
-  writeBatch
+  writeBatch,
+  increment
 } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-firestore.js';
 
 import { firebaseConfig } from './firebase-config.js';
@@ -164,6 +165,26 @@ export async function updateChild(familyId, childId, changes) {
   await updateDoc(childDoc(familyId, childId), changes);
 }
 
+/**
+ * Escucha un único niño en tiempo real: hace falta además de
+ * `subscribeChildren` porque `minutesByDay` (metas y rachas) e insignias
+ * necesitan reaccionar al instante cuando cambian, y suscribirse a todos los
+ * niños de la familia para ver el detalle de uno solo sería un derroche.
+ * @returns {() => void} función para cancelar la suscripción.
+ */
+export function subscribeChild(familyId, childId, onChange, onError) {
+  return onSnapshot(
+    childDoc(familyId, childId),
+    snap => onChange(snap.exists() ? { id: snap.id, ...snap.data() } : null),
+    err => { console.error('Error escuchando al niño', err); onError && onError(err); }
+  );
+}
+
+/** Metas de lectura configuradas por el adulto. Cualquier campo puede quedar sin fijar. */
+export async function updateChildGoals(familyId, childId, goals) {
+  await updateDoc(childDoc(familyId, childId), { goals });
+}
+
 /** Borra el niño y todos sus libros: Firestore no borra subcolecciones solo. */
 export async function deleteChild(familyId, childId) {
   const books = await getDocs(booksCol(familyId, childId));
@@ -253,13 +274,29 @@ export function subscribeSessions(familyId, childId, bookId, onChange, onError) 
 
 /**
  * Guarda una sesión terminada y actualiza el libro en una sola operación:
- * suma los minutos, avanza el marcapáginas y apaga el cronómetro.
- * Al ir en un lote, o se aplica todo o no se aplica nada.
+ * suma los minutos, avanza el marcapáginas y apaga el cronómetro. De paso
+ * suma esos minutos al día correspondiente en `children/{childId}.minutesByDay`
+ * — un mapa `{ 'YYYY-MM-DD': minutos }` en el propio niño, no en las
+ * sesiones. Es lo que permite calcular metas de "minutos hoy" o "minutos esta
+ * semana" y rachas de días leyendo sin tener que consultar todas las sesiones
+ * de todos los libros a la vez (que en Firestore exigiría una collection
+ * group query y unas reglas de seguridad más difíciles de razonar). El mapa
+ * no se recorta: incluso años de un dato al día pesa un puñado de KB, muy
+ * lejos del límite de un documento.
+ * Al ir todo en un lote, o se aplica entero o no se aplica nada.
  */
 export async function endSession(familyId, childId, bookId, session, bookChanges) {
   const batch = writeBatch(db);
   batch.set(doc(sessionsCol(familyId, childId, bookId)), session);
   batch.update(bookDoc(familyId, childId, bookId), bookChanges);
+  // La clave del nivel superior lleva el punto literal ("minutesByDay.2026-08-07"),
+  // no un objeto anidado: es la notación de Firestore para tocar una sola
+  // clave de un mapa sin arriesgarse a si {merge:true} fusiona o sobrescribe
+  // el mapa entero cuando se le pasa un objeto parcial. Con la notación de
+  // punto no hay ambigüedad posible: solo se toca esa clave.
+  batch.set(childDoc(familyId, childId), {
+    [`minutesByDay.${session.day}`]: increment(session.minutes)
+  }, { merge: true });
   await batch.commit();
 }
 
@@ -268,4 +305,32 @@ export async function deleteSession(familyId, childId, bookId, sessionId, bookCh
   batch.delete(doc(sessionsCol(familyId, childId, bookId), sessionId));
   batch.update(bookDoc(familyId, childId, bookId), bookChanges);
   await batch.commit();
+}
+
+// ---- Insignias ----
+//
+// Una insignia es un documento por logro conseguido, con la clave fija del
+// catálogo (ver js/achievements.js) como id del documento — así comprobar si
+// ya está desbloqueada es una simple consulta por id, sin duplicados
+// posibles. Se guarda la fecha de desbloqueo para que el momento del logro
+// quede fijo: si más tarde se corrige una sesión antigua, un logro ya
+// celebrado no debe "desconcederse".
+
+const badgesCol = (familyId, childId) =>
+  collection(db, 'families', familyId, 'children', childId, 'badges');
+
+/**
+ * Escucha las insignias ya desbloqueadas de un niño.
+ * @returns {() => void} función para cancelar la suscripción.
+ */
+export function subscribeBadges(familyId, childId, onChange, onError) {
+  return onSnapshot(
+    badgesCol(familyId, childId),
+    snap => onChange(snap.docs.map(d => ({ id: d.id, ...d.data() }))),
+    err => { console.error('Error escuchando insignias', err); onError && onError(err); }
+  );
+}
+
+export async function unlockBadge(familyId, childId, badgeKey) {
+  await setDoc(doc(badgesCol(familyId, childId), badgeKey), { unlockedAt: Date.now() });
 }

@@ -152,6 +152,7 @@ export class AdminScreen {
           <p class="admin-row-sub">Código: ${escapeHtml(c.code || '—')}</p>
         </div>
         <button class="icon-btn" data-action="open" data-id="${c.id}">Ver</button>
+        <button class="icon-btn" data-action="goals" data-id="${c.id}">🎯 Metas</button>
         <button class="icon-btn" data-action="edit" data-id="${c.id}">Editar</button>
         <button class="icon-btn danger" data-action="delete" data-id="${c.id}">Borrar</button>
       </div>
@@ -188,6 +189,7 @@ export class AdminScreen {
       const child = this.getChildren().find(c => c.id === btn.dataset.id);
       if (!child) return;
       if (btn.dataset.action === 'open') btn.onclick = () => this.onOpenChild(child);
+      if (btn.dataset.action === 'goals') btn.onclick = () => this.openGoalsSheet(child);
       if (btn.dataset.action === 'edit') btn.onclick = () => this.openChildSheet(child);
       if (btn.dataset.action === 'delete') btn.onclick = () => this.confirmDeleteChild(child);
     });
@@ -251,6 +253,75 @@ export class AdminScreen {
         } else {
           await store.updateChild(this.family.id, child.id, { name, code });
         }
+        overlay.remove();
+      } catch (e) {
+        console.error(e);
+        error.textContent = describeError(e);
+        confirm.disabled = false;
+      }
+    };
+  }
+
+  /**
+   * Metas de lectura del niño. Las fija el adulto aquí; el niño solo ve su
+   * progreso en la biblioteca, no puede cambiarlas — es una decisión tomada
+   * en el brief. Cada campo es opcional: en blanco significa "sin meta de
+   * este tipo", y no se muestra nada en la biblioteca para ese campo.
+   */
+  openGoalsSheet(child) {
+    const goals = child.goals || {};
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    overlay.innerHTML = `
+      <div class="sheet">
+        <h3>Metas de ${escapeHtml(child.name)}</h3>
+        <p class="field-hint">Dejar en blanco desactiva esa meta. ${escapeHtml(child.name)} verá su progreso
+        mientras lee, pero no puede cambiar estos números.</p>
+
+        <label for="goal-daily-minutes">Minutos al día</label>
+        <input type="number" id="goal-daily-minutes" min="1" max="600"
+               value="${goals.dailyMinutes ? escapeHtml(goals.dailyMinutes) : ''}">
+
+        <label for="goal-weekly-minutes">Minutos a la semana</label>
+        <input type="number" id="goal-weekly-minutes" min="1" max="3000"
+               value="${goals.weeklyMinutes ? escapeHtml(goals.weeklyMinutes) : ''}">
+
+        <label for="goal-weekly-books">Libros terminados a la semana</label>
+        <input type="number" id="goal-weekly-books" min="1" max="50"
+               value="${goals.weeklyBooks ? escapeHtml(goals.weeklyBooks) : ''}">
+
+        <label for="goal-monthly-books">Libros terminados al mes</label>
+        <input type="number" id="goal-monthly-books" min="1" max="200"
+               value="${goals.monthlyBooks ? escapeHtml(goals.monthlyBooks) : ''}">
+
+        <p class="form-error" id="goals-error"></p>
+        <div class="sheet-actions">
+          <button class="btn-secondary" id="cancel-goals">Cancelar</button>
+          <button class="btn-confirm" id="confirm-goals">Guardar</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    overlay.querySelector('#cancel-goals').onclick = () => overlay.remove();
+
+    const leerEntero = id => {
+      const n = parseInt(overlay.querySelector(id).value, 10);
+      return Number.isFinite(n) && n > 0 ? n : null;
+    };
+
+    const error = overlay.querySelector('#goals-error');
+    const confirm = overlay.querySelector('#confirm-goals');
+    confirm.onclick = async () => {
+      const nuevasMetas = {
+        dailyMinutes: leerEntero('#goal-daily-minutes'),
+        weeklyMinutes: leerEntero('#goal-weekly-minutes'),
+        weeklyBooks: leerEntero('#goal-weekly-books'),
+        monthlyBooks: leerEntero('#goal-monthly-books')
+      };
+      confirm.disabled = true;
+      try {
+        await store.updateChildGoals(this.family.id, child.id, nuevasMetas);
         overlay.remove();
       } catch (e) {
         console.error(e);

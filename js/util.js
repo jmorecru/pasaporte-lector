@@ -24,11 +24,29 @@ export function stripTags(str) {
     .trim();
 }
 
-/** Fecha de hoy en ISO corto (YYYY-MM-DD): ordenable y sin ambigüedad. */
-export function todayISO() {
-  const d = new Date();
+/** Cualquier fecha en ISO corto (YYYY-MM-DD), en hora local: ordenable y sin ambigüedad. */
+export function dateISO(d = new Date()) {
   const pad = n => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** Fecha de hoy en ISO corto. */
+export function todayISO() {
+  return dateISO(new Date());
+}
+
+/**
+ * "YYYY-MM-DD" → Date a medianoche en hora LOCAL.
+ *
+ * A propósito no se usa `new Date(iso)`: el constructor de cadena interpreta
+ * una fecha sin hora como medianoche UTC, no local. En un mapa como
+ * `minutesByDay` las claves se generan con `dateISO()` (en local), así que
+ * hay que volver a leerlas con el mismo criterio o las comparaciones de racha
+ * y de semana/mes podrían desplazarse un día según la zona horaria.
+ */
+export function parseISODate(iso) {
+  const [y, m, d] = String(iso).split('-').map(Number);
+  return new Date(y, m - 1, d);
 }
 
 /** ISO corto → DD/MM/YYYY para mostrar. */
