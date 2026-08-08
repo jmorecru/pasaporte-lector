@@ -10,7 +10,7 @@
 import * as store from './store.js';
 import { googleBooksApiKey } from './firebase-config.js';
 import {
-  escapeHtml, todayISO, formatDate, describeError, stripTags,
+  escapeHtml, todayISO, dateISO, formatDate, describeError, stripTags,
   looksLikeIsbn, normalizeIsbn, formatMinutes, formatChrono
 } from './util.js';
 import { barcodeAvailable, scanBarcode } from './barcode.js';
@@ -166,14 +166,15 @@ export class LibraryScreen {
     overlay.innerHTML = `
       <div class="sheet">
         <h3>🏅 Insignias (${desbloqueadas.size}/${BADGES.length})</h3>
+        <p class="field-hint">Toca una para ver de qué trata.</p>
         <div class="badges-grid">
           ${BADGES.map(b => {
             const lograda = desbloqueadas.get(b.key);
             return `
-              <div class="badge-tile ${lograda ? 'unlocked' : ''}">
+              <button class="badge-tile ${lograda ? 'unlocked' : ''}" data-badge="${b.key}">
                 <div class="badge-tile-emoji">${lograda ? b.emoji : '🔒'}</div>
                 <p class="badge-tile-label">${escapeHtml(b.label)}</p>
-              </div>
+              </button>
             `;
           }).join('')}
         </div>
@@ -184,6 +185,44 @@ export class LibraryScreen {
     `;
     document.body.appendChild(overlay);
     overlay.querySelector('#close-badges').onclick = () => overlay.remove();
+    overlay.querySelectorAll('[data-badge]').forEach(tile => {
+      tile.onclick = () => {
+        const def = BADGES.find(b => b.key === tile.dataset.badge);
+        this.openBadgeDetail(def, desbloqueadas.get(def.key), ctx);
+      };
+    });
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  }
+
+  /**
+   * Detalle de una insignia al tocarla: qué hay que hacer para conseguirla,
+   * el progreso si aún no está lograda, o la fecha si ya lo está.
+   *
+   * Se abre con un toque en vez de con un tooltip al pasar el ratón por
+   * encima a propósito: en una tablet o un móvil no existe "pasar por
+   * encima", así que un tooltip no lo vería nadie que use la app desde ahí.
+   */
+  openBadgeDetail(def, logro, ctx) {
+    const actual = Math.min(def.valor(ctx), def.meta);
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    overlay.innerHTML = `
+      <div class="sheet badge-celebration">
+        <div class="badge-big">${logro ? def.emoji : '🔒'}</div>
+        <p class="badge-celebration-name">${escapeHtml(def.label)}</p>
+        <p class="field-hint" style="text-align:center;">${escapeHtml(def.descripcion)}</p>
+        ${logro
+          ? `<p class="badge-detail-status done">✔ Conseguida el ${escapeHtml(formatDate(dateISO(new Date(logro.unlockedAt))))}</p>`
+          : `<p class="badge-detail-status">Llevas ${actual} de ${def.meta} ${escapeHtml(def.unidad)}</p>
+             <div class="badge-progress"><div class="badge-progress-fill" style="width:${Math.round(actual / def.meta * 100)}%"></div></div>`
+        }
+        <div class="sheet-actions">
+          <button class="btn-secondary" id="close-badge-detail">Cerrar</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.querySelector('#close-badge-detail').onclick = () => overlay.remove();
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
   }
 

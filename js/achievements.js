@@ -11,31 +11,67 @@
 
 import { dateISO, parseISODate } from './util.js';
 
+// Además de `check` (si está conseguida), cada insignia lleva `descripcion`,
+// `meta`, `unidad` y `valor(ctx)` — no hacen falta para desbloquear nada, son
+// para poder explicarla al tocarla: "llevas 3 de 5 libros", con fecha de
+// consecución si ya está lograda. `check` se deja explícito en vez de
+// derivarlo de `valor >= meta` porque así se lee de un vistazo sin tener que
+// saltar a otra línea.
 export const BADGES = [
   // Libros terminados (total acumulado)
-  { key: 'libros-1', label: 'Primer Sello', emoji: '📖', check: ctx => ctx.librosTerminados >= 1 },
-  { key: 'libros-5', label: 'Aprendiz de Lector', emoji: '📚', check: ctx => ctx.librosTerminados >= 5 },
-  { key: 'libros-10', label: 'Lector Aventurero', emoji: '🗺️', check: ctx => ctx.librosTerminados >= 10 },
-  { key: 'libros-25', label: 'Maestro Lector', emoji: '🏆', check: ctx => ctx.librosTerminados >= 25 },
-  { key: 'libros-50', label: 'Leyenda de la Biblioteca', emoji: '👑', check: ctx => ctx.librosTerminados >= 50 },
+  { key: 'libros-1', label: 'Primer Sello', emoji: '📖',
+    descripcion: 'Termina tu primer libro.', meta: 1, unidad: 'libro',
+    valor: ctx => ctx.librosTerminados, check: ctx => ctx.librosTerminados >= 1 },
+  { key: 'libros-5', label: 'Aprendiz de Lector', emoji: '📚',
+    descripcion: 'Termina 5 libros.', meta: 5, unidad: 'libros',
+    valor: ctx => ctx.librosTerminados, check: ctx => ctx.librosTerminados >= 5 },
+  { key: 'libros-10', label: 'Lector Aventurero', emoji: '🗺️',
+    descripcion: 'Termina 10 libros.', meta: 10, unidad: 'libros',
+    valor: ctx => ctx.librosTerminados, check: ctx => ctx.librosTerminados >= 10 },
+  { key: 'libros-25', label: 'Maestro Lector', emoji: '🏆',
+    descripcion: 'Termina 25 libros.', meta: 25, unidad: 'libros',
+    valor: ctx => ctx.librosTerminados, check: ctx => ctx.librosTerminados >= 25 },
+  { key: 'libros-50', label: 'Leyenda de la Biblioteca', emoji: '👑',
+    descripcion: 'Termina 50 libros.', meta: 50, unidad: 'libros',
+    valor: ctx => ctx.librosTerminados, check: ctx => ctx.librosTerminados >= 50 },
 
   // Ritmo: varios libros en poco tiempo (equivalente a "Book Boss" de Oxford)
-  { key: 'ritmo-semana-3', label: 'Semana Imparable', emoji: '⚡', check: ctx => ctx.librosEstaSemana >= 3 },
-  { key: 'ritmo-mes-6', label: 'Mes de Récord', emoji: '🔥', check: ctx => ctx.librosEsteMes >= 6 },
+  { key: 'ritmo-semana-3', label: 'Semana Imparable', emoji: '⚡',
+    descripcion: 'Termina 3 libros en la misma semana.', meta: 3, unidad: 'libros esta semana',
+    valor: ctx => ctx.librosEstaSemana, check: ctx => ctx.librosEstaSemana >= 3 },
+  { key: 'ritmo-mes-6', label: 'Mes de Récord', emoji: '🔥',
+    descripcion: 'Termina 6 libros en el mismo mes.', meta: 6, unidad: 'libros este mes',
+    valor: ctx => ctx.librosEsteMes, check: ctx => ctx.librosEsteMes >= 6 },
 
   // Minutos acumulados de por vida
-  { key: 'minutos-60', label: 'Primera Hora', emoji: '⏱️', check: ctx => ctx.minutosTotales >= 60 },
-  { key: 'minutos-300', label: 'Maratón de Lectura', emoji: '🏃', check: ctx => ctx.minutosTotales >= 300 },
-  { key: 'minutos-1200', label: 'Superlector', emoji: '💪', check: ctx => ctx.minutosTotales >= 1200 },
+  { key: 'minutos-60', label: 'Primera Hora', emoji: '⏱️',
+    descripcion: 'Lee 60 minutos en total.', meta: 60, unidad: 'min',
+    valor: ctx => ctx.minutosTotales, check: ctx => ctx.minutosTotales >= 60 },
+  { key: 'minutos-300', label: 'Maratón de Lectura', emoji: '🏃',
+    descripcion: 'Lee 300 minutos en total (5 horas).', meta: 300, unidad: 'min',
+    valor: ctx => ctx.minutosTotales, check: ctx => ctx.minutosTotales >= 300 },
+  { key: 'minutos-1200', label: 'Superlector', emoji: '💪',
+    descripcion: 'Lee 1200 minutos en total (20 horas).', meta: 1200, unidad: 'min',
+    valor: ctx => ctx.minutosTotales, check: ctx => ctx.minutosTotales >= 1200 },
 
   // Rachas de días seguidos leyendo
-  { key: 'racha-3', label: 'Racha de 3', emoji: '🔥', check: ctx => ctx.rachaDias >= 3 },
-  { key: 'racha-7', label: 'Semana Completa', emoji: '🌟', check: ctx => ctx.rachaDias >= 7 },
-  { key: 'racha-30', label: 'Mes Perfecto', emoji: '🏅', check: ctx => ctx.rachaDias >= 30 },
+  { key: 'racha-3', label: 'Racha de 3', emoji: '🔥',
+    descripcion: 'Lee 3 días seguidos.', meta: 3, unidad: 'días seguidos',
+    valor: ctx => ctx.rachaDias, check: ctx => ctx.rachaDias >= 3 },
+  { key: 'racha-7', label: 'Semana Completa', emoji: '🌟',
+    descripcion: 'Lee 7 días seguidos.', meta: 7, unidad: 'días seguidos',
+    valor: ctx => ctx.rachaDias, check: ctx => ctx.rachaDias >= 7 },
+  { key: 'racha-30', label: 'Mes Perfecto', emoji: '🏅',
+    descripcion: 'Lee 30 días seguidos.', meta: 30, unidad: 'días seguidos',
+    valor: ctx => ctx.rachaDias, check: ctx => ctx.rachaDias >= 30 },
 
   // Variedad
-  { key: 'colecciones-3', label: 'Explorador de Sagas', emoji: '🧭', check: ctx => ctx.coleccionesDistintas >= 3 },
-  { key: 'valoraciones-10', label: 'Crítico Literario', emoji: '⭐', check: ctx => ctx.librosValorados >= 10 }
+  { key: 'colecciones-3', label: 'Explorador de Sagas', emoji: '🧭',
+    descripcion: 'Termina libros de 3 colecciones distintas.', meta: 3, unidad: 'colecciones',
+    valor: ctx => ctx.coleccionesDistintas, check: ctx => ctx.coleccionesDistintas >= 3 },
+  { key: 'valoraciones-10', label: 'Crítico Literario', emoji: '⭐',
+    descripcion: 'Pon tu valoración a 10 libros.', meta: 10, unidad: 'libros valorados',
+    valor: ctx => ctx.librosValorados, check: ctx => ctx.librosValorados >= 10 }
 ];
 
 /** Lunes de la semana que contiene `fecha`, a medianoche local. */

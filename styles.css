@@ -481,6 +481,11 @@ input[type=range]{width:100%;accent-color:var(--teal);margin-top:4px;}
   background:var(--bg);
   border:1px solid var(--line);
   opacity:.55;
+  /* Es un <button>, no un <div>: quita el estilo nativo para que siga
+     pareciendo una ficha, no un botón de formulario. */
+  font-family:inherit;
+  cursor:pointer;
+  width:100%;
 }
 .badge-tile.unlocked{
   opacity:1;
@@ -520,7 +525,28 @@ input[type=range]{width:100%;accent-color:var(--teal);margin-top:4px;}
   font-weight:700;
   font-size:1.3rem;
   color:var(--ink);
-  margin:0 0 18px;
+  margin:0 0 6px;
+}
+.badge-detail-status{
+  font-family:var(--font-stamp);
+  font-size:.8rem;
+  color:var(--ink-soft);
+  text-align:center;
+  margin:14px 0 4px;
+}
+.badge-detail-status.done{color:var(--teal-dark);}
+.badge-progress{
+  height:8px;
+  border-radius:999px;
+  background:var(--bg);
+  border:1px solid var(--line);
+  overflow:hidden;
+  margin:6px 0 4px;
+}
+.badge-progress-fill{
+  height:100%;
+  background:var(--gold);
+  border-radius:999px;
 }
 
 /* --- Temporizador y sesiones de lectura --- */
