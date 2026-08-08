@@ -294,6 +294,16 @@ export class AdminScreen {
         <input type="number" id="goal-monthly-books" min="1" max="200"
                value="${goals.monthlyBooks ? escapeHtml(goals.monthlyBooks) : ''}">
 
+        <h3 class="section-title">Insignias</h3>
+        <p class="field-hint">Borra las insignias que ${escapeHtml(child.name)} ya tenga desbloqueadas,
+        para volver a empezar de cero. No toca sus libros ni sus sesiones de lectura: si algo que ya
+        había conseguido sigue siendo cierto (libros que de verdad terminó, minutos que de verdad
+        leyó), se le volverá a desbloquear solo en cuanto abra su biblioteca — no hay forma de
+        "posponer" un logro que ya es cierto.</p>
+        <button type="button" class="btn-secondary" id="btn-reset-badges" style="width:100%;">
+          🎖️ Borrar insignias conseguidas
+        </button>
+
         <p class="form-error" id="goals-error"></p>
         <div class="sheet-actions">
           <button class="btn-secondary" id="cancel-goals">Cancelar</button>
@@ -327,6 +337,45 @@ export class AdminScreen {
         console.error(e);
         error.textContent = describeError(e);
         confirm.disabled = false;
+      }
+    };
+
+    overlay.querySelector('#btn-reset-badges').onclick = () => this.confirmResetBadges(child);
+  }
+
+  /** Confirmación ligera: perder insignias no borra lectura real, así que no hace falta escribir el nombre. */
+  confirmResetBadges(child) {
+    const overlay = document.createElement('div');
+    overlay.className = 'overlay';
+    overlay.innerHTML = `
+      <div class="sheet">
+        <h3>¿Borrar las insignias de ${escapeHtml(child.name)}?</h3>
+        <p class="field-hint">Las que vuelva a cumplir se le desbloquearán solas al instante;
+        el resto esperará a que las consiga de verdad, como siempre.</p>
+        <p class="form-error" id="reset-badges-error"></p>
+        <div class="sheet-actions">
+          <button class="btn-secondary" id="cancel-reset-badges">Cancelar</button>
+          <button class="btn-danger" id="confirm-reset-badges">Borrar insignias</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    overlay.querySelector('#cancel-reset-badges').onclick = () => overlay.remove();
+
+    const error = overlay.querySelector('#reset-badges-error');
+    const confirm = overlay.querySelector('#confirm-reset-badges');
+    confirm.onclick = async () => {
+      confirm.disabled = true;
+      confirm.textContent = 'Borrando…';
+      try {
+        await store.resetBadges(this.family.id, child.id);
+        overlay.remove();
+      } catch (e) {
+        console.error(e);
+        error.textContent = describeError(e);
+        confirm.disabled = false;
+        confirm.textContent = 'Borrar insignias';
       }
     };
   }

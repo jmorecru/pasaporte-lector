@@ -334,3 +334,17 @@ export function subscribeBadges(familyId, childId, onChange, onError) {
 export async function unlockBadge(familyId, childId, badgeKey) {
   await setDoc(doc(badgesCol(familyId, childId), badgeKey), { unlockedAt: Date.now() });
 }
+
+/**
+ * Borra todas las insignias ya desbloqueadas de un niño, para volver a
+ * empezar de cero. No toca libros ni sesiones: si las condiciones de fondo
+ * (libros terminados, minutos acumulados...) siguen cumpliéndose, esas
+ * insignias se desbloquearán solas de nuevo la próxima vez que se abra su
+ * biblioteca — no hay forma de "posponer" un logro que ya es cierto.
+ */
+export async function resetBadges(familyId, childId) {
+  const snap = await getDocs(badgesCol(familyId, childId));
+  const batch = writeBatch(db);
+  snap.docs.forEach(d => batch.delete(d.ref));
+  await batch.commit();
+}
