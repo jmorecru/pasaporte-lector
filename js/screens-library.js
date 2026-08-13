@@ -17,7 +17,7 @@ import { barcodeAvailable, scanBarcode } from './barcode.js';
 import { ambiente, SONIDOS } from './ambient.js';
 import { BADGES, resumenLectura, insigniasNuevas } from './achievements.js';
 
-const STATUS_LABELS = { pendiente: 'Pendiente', leyendo: 'Leyendo', terminado: 'Terminado' };
+const STATUS_LABELS = { pendiente: 'Pendiente', leyendo: 'Leyendo', terminado: 'Terminado', descartado: 'Descartado' };
 const SIN_COLECCION = '__sin-coleccion__';   // valor imposible de teclear
 
 export class LibraryScreen {
@@ -339,6 +339,7 @@ export class LibraryScreen {
           ${this.filterBtn('leyendo', 'Leyendo')}
           ${this.filterBtn('terminado', 'Terminados')}
           ${this.filterBtn('pendiente', 'Pendientes')}
+          ${this.filterBtn('descartado', 'Descartados')}
         </div>
 
         ${collections.length ? `
@@ -390,7 +391,7 @@ export class LibraryScreen {
     const collection = (b.collection || '').trim();
     const tags = (b.tags || []).filter(t => String(t).trim());
     return `
-      <div class="book-card estado-${b.status}">
+      <div class="book-card estado-${b.status}" data-book-id="${b.id}">
         ${b.status === 'terminado' ? `<div class="stamp ${isFresh ? 'fresh' : ''}">LEÍDO${finished ? ' · ' + finished : ''}</div>` : ''}
         <div class="book-top">
           ${b.cover ? `<img class="book-cover" src="${escapeHtml(b.cover)}" alt="">` : ''}
@@ -414,7 +415,8 @@ export class LibraryScreen {
           ${b.status !== 'leyendo' ? `<button class="icon-btn" data-action="set-status" data-id="${b.id}" data-status="leyendo">▶ Marcar leyendo</button>` : ''}
           ${b.status !== 'terminado' ? `<button class="icon-btn" data-action="set-status" data-id="${b.id}" data-status="terminado">✔ Marcar terminado</button>` : ''}
           ${b.status !== 'pendiente' ? `<button class="icon-btn" data-action="set-status" data-id="${b.id}" data-status="pendiente">⏸ Pendiente</button>` : ''}
-          ${b.status !== 'terminado' ? (b.reserved
+          ${b.status !== 'descartado' ? `<button class="icon-btn" data-action="set-status" data-id="${b.id}" data-status="descartado">🚫 No me gusta</button>` : ''}
+          ${(b.status !== 'terminado' && b.status !== 'descartado') ? (b.reserved
             ? `<button class="icon-btn" data-action="unreserve" data-id="${b.id}">✖ Ya no lo quiero</button>`
             : `<button class="icon-btn" data-action="reserve" data-id="${b.id}">🏛 Pedir a la biblioteca</button>`) : ''}
           <button class="icon-btn" data-action="edit-book" data-id="${b.id}">✏ Editar</button>
@@ -430,7 +432,7 @@ export class LibraryScreen {
     if (b.activeSince) {
       partes.push(`<span class="chrono" data-chrono="${b.id}">${escapeHtml(formatChrono(Date.now() - b.activeSince))}</span>`);
       partes.push(`<button class="icon-btn stop" data-action="stop-session" data-id="${b.id}">⏹ Terminar sesión</button>`);
-    } else if (b.status !== 'terminado') {
+    } else if (b.status !== 'terminado' && b.status !== 'descartado') {
       partes.push(`<button class="icon-btn" data-action="start-session" data-id="${b.id}">⏱ Empezar a leer</button>`);
     }
     if (b.currentPage) {
@@ -844,8 +846,9 @@ export class LibraryScreen {
     // tratar el número como si fuera parte del título.
     let q = queryText;
     let porIsbn = false;
+    let isbn = null;   // se usa más abajo al aplicar el resultado único
     if (looksLikeIsbn(queryText)) {
-      const isbn = normalizeIsbn(queryText);
+      isbn = normalizeIsbn(queryText);
       if (!isbn) {
         resultsEl.innerHTML = '<p class="search-hint">Ese ISBN no es válido: repasa si falta o sobra algún número. También puedes buscar por el título.</p>';
         return;
@@ -888,7 +891,10 @@ export class LibraryScreen {
       // que nadie espera, y quien no lo daba se encontraba con "falta el título".
       if (porIsbn && items.length === 1) {
         resultsEl.innerHTML = '';
-        this.applyBookResult(items[0].volumeInfo || {});
+        // Se pasa el ISBN ya normalizado con el que se buscó: es el que está
+        // impreso en el libro que se tiene en la mano, más fiable que confiar
+        // en que `industryIdentifiers` de Google coincida exactamente.
+        this.applyBookResult(items[0].volumeInfo || {}, isbn);
         return;
       }
       resultsEl.innerHTML = items.map((item, i) => {
@@ -931,14 +937,20 @@ export class LibraryScreen {
    * Los campos del formulario son la única fuente de verdad al guardar. Antes
    * convivían con los datos del buscador y estos ganaban, así que si alguien
    * elegía un libro y luego corregía el título, la corrección se perdía.
+   *
+   * @param {object} info           volumeInfo de Google Books
+   * @param {string|null} isbnConocido  si se llegó aquí buscando por ISBN, el
+   *   valor ya tecleado o escaneado — más fiable que fiarse de que
+   *   `industryIdentifiers` de Google coincida exactamente con esa edición.
    */
-  applyBookResult(info) {
+  applyBookResult(info, isbnConocido) {
     this.selectedBookResult = {
       title: info.title || '',
       author: (info.authors || []).join(', '),
       pages: info.pageCount || null,
       cover: coverOf(info),
-      description: stripTags(info.description) || null
+      description: stripTags(info.description) || null,
+      isbn: isbnConocido || isbnFromVolumeInfo(info)
     };
     const set = (id, value) => {
       const el = document.getElementById(id);
@@ -1058,6 +1070,17 @@ export class LibraryScreen {
         <textarea id="book-notes" placeholder="¿Qué te ha parecido?">${escapeHtml(book ? (book.notes || '') : '')}</textarea>
 
         <p class="form-error" id="book-error"></p>
+
+        ${isNew ? `
+          <div class="dup-warning" id="book-duplicate-warning" style="display:none;">
+            <p class="dup-warning-text" id="dup-warning-text"></p>
+            <div class="sheet-actions">
+              <button type="button" class="btn-secondary" id="dup-view-book">Ver libro</button>
+              <button type="button" class="btn-confirm" id="dup-add-anyway">Añadir de todas formas</button>
+            </div>
+          </div>
+        ` : ''}
+
         <div class="sheet-actions">
           <button class="btn-secondary" id="cancel-book">Cancelar</button>
           <button class="btn-confirm" id="confirm-book">${isNew ? 'Guardar libro' : 'Guardar cambios'}</button>
@@ -1119,10 +1142,13 @@ export class LibraryScreen {
       // que corregir todavía.
       const currentPageInput = overlay.querySelector('#book-current-page');
       const currentPage = currentPageInput ? parseInt(currentPageInput.value, 10) : NaN;
-      // La carátula es lo único sin campo editable: viene del buscador o, al
-      // editar, de lo que ya tuviera el libro.
+      // La carátula y el ISBN son lo único sin campo editable: vienen del
+      // buscador o, al editar, de lo que ya tuviera el libro.
       const cover = (this.selectedBookResult && this.selectedBookResult.cover)
         || (book ? book.cover : null)
+        || null;
+      const isbn = (this.selectedBookResult && this.selectedBookResult.isbn)
+        || (book ? book.isbn : null)
         || null;
 
       const fields = {
@@ -1130,6 +1156,7 @@ export class LibraryScreen {
         author: overlay.querySelector('#book-author').value.trim(),
         pages: Number.isFinite(pages) ? pages : null,
         cover,
+        isbn,
         status,
         rating: rating || null,
         notes: overlay.querySelector('#book-notes').value.trim(),
@@ -1138,37 +1165,79 @@ export class LibraryScreen {
         tags
       };
 
-      confirm.disabled = true;
-      try {
-        if (isNew) {
-          const id = await store.addBook(this.familyId, this.child.id, {
-            ...fields,
-            addedAt: Date.now(),
-            finishedAt: status === 'terminado' ? todayISO() : null
-          });
-          if (status === 'terminado') {
-            this.freshlyFinishedId = id;
-            setTimeout(() => { this.freshlyFinishedId = null; }, 700);
-          }
-        } else {
-          // La fecha de fin solo se toca si el estado ha cambiado, para no
-          // borrar el día real en que se terminó al corregir una errata.
-          if (status !== book.status) {
-            fields.finishedAt = status === 'terminado' ? todayISO() : null;
-          }
-          // Vacío = sin marcapáginas (null), no "no tocar": es la forma de
-          // limpiar una página que hubiera quedado huérfana por un fallo
-          // anterior, sin depender de borrar y rehacer sesiones.
-          fields.currentPage = Number.isFinite(currentPage) ? currentPage : null;
-          await store.updateBook(this.familyId, this.child.id, book.id, fields);
+      const guardar = async forzarDuplicado => {
+        // Solo se comprueba al añadir: al editar, el libro que se está
+        // tocando ya es el "duplicado" de sí mismo.
+        if (isNew && !forzarDuplicado) {
+          const existente = encontrarDuplicado(this.books, fields);
+          if (existente) { mostrarAvisoDuplicado(existente); return; }
         }
-        overlay.remove();
-      } catch (e) {
-        console.error(e);
-        error.textContent = describeError(e);
-        confirm.disabled = false;
-      }
+
+        confirm.disabled = true;
+        try {
+          if (isNew) {
+            const id = await store.addBook(this.familyId, this.child.id, {
+              ...fields,
+              addedAt: Date.now(),
+              finishedAt: status === 'terminado' ? todayISO() : null
+            });
+            if (status === 'terminado') {
+              this.freshlyFinishedId = id;
+              setTimeout(() => { this.freshlyFinishedId = null; }, 700);
+            }
+          } else {
+            // La fecha de fin solo se toca si el estado ha cambiado, para no
+            // borrar el día real en que se terminó al corregir una errata.
+            if (status !== book.status) {
+              fields.finishedAt = status === 'terminado' ? todayISO() : null;
+            }
+            // Vacío = sin marcapáginas (null), no "no tocar": es la forma de
+            // limpiar una página que hubiera quedado huérfana por un fallo
+            // anterior, sin depender de borrar y rehacer sesiones.
+            fields.currentPage = Number.isFinite(currentPage) ? currentPage : null;
+            await store.updateBook(this.familyId, this.child.id, book.id, fields);
+          }
+          overlay.remove();
+        } catch (e) {
+          console.error(e);
+          error.textContent = describeError(e);
+          confirm.disabled = false;
+        }
+      };
+
+      const mostrarAvisoDuplicado = existente => {
+        error.textContent = '';
+        const dupBox = overlay.querySelector('#book-duplicate-warning');
+        overlay.querySelector('#dup-warning-text').textContent =
+          `Ya tienes "${existente.title}" en tu lista (${STATUS_LABELS[existente.status] || existente.status}).`;
+        dupBox.style.display = '';
+        overlay.querySelector('#dup-view-book').onclick = () => {
+          overlay.remove();
+          this.irALibro(existente.id);
+        };
+        overlay.querySelector('#dup-add-anyway').onclick = () => guardar(true);
+      };
+
+      guardar(false);
     };
+  }
+
+  /**
+   * Cierra cualquier formulario abierto, se asegura de que ningún filtro
+   * esconda el libro, y desplaza la lista hasta su tarjeta con un resalte
+   * breve — para "llevar" al usuario hasta un libro que ya tenía, en vez de
+   * limitarse a decir que existe.
+   */
+  irALibro(bookId) {
+    this.filter = 'todos';
+    this.collectionFilter = null;
+    this.tagFilter = null;
+    this.render();
+    const tarjeta = this.root.querySelector(`[data-book-id="${bookId}"]`);
+    if (!tarjeta) return;   // el libro ya no está (se borró entre medias)
+    tarjeta.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    tarjeta.classList.add('highlight-flash');
+    setTimeout(() => tarjeta.classList.remove('highlight-flash'), 1600);
   }
 }
 
@@ -1193,4 +1262,29 @@ function coverOf(volumeInfo) {
   if (!links) return null;
   const url = links.thumbnail || links.smallThumbnail;
   return url ? url.replace('http://', 'https://') : null;
+}
+
+/** ISBN-13 si lo trae Google Books, si no ISBN-10, si no nada. */
+function isbnFromVolumeInfo(volumeInfo) {
+  const ids = volumeInfo.industryIdentifiers || [];
+  const encontrado = ids.find(i => i.type === 'ISBN_13') || ids.find(i => i.type === 'ISBN_10');
+  return encontrado ? encontrado.identifier : null;
+}
+
+/**
+ * ¿Ya hay un libro con este ISBN, o con el mismo título y autor, en la lista?
+ * El ISBN identifica la edición exacta y es lo primero que se mira si se
+ * conoce; título+autor es el respaldo para libros metidos a mano, que nunca
+ * tienen ISBN.
+ */
+function encontrarDuplicado(books, candidato) {
+  if (candidato.isbn) {
+    const porIsbn = books.find(b => b.isbn && b.isbn === candidato.isbn);
+    if (porIsbn) return porIsbn;
+  }
+  const titulo = candidato.title.trim().toLowerCase();
+  const autor = (candidato.author || '').trim().toLowerCase();
+  return books.find(b =>
+    b.title.trim().toLowerCase() === titulo && (b.author || '').trim().toLowerCase() === autor
+  ) || null;
 }

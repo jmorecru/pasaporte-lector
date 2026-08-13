@@ -157,6 +157,7 @@ body{
 .book-card.estado-leyendo{border-left-color:var(--brick);}
 .book-card.estado-terminado{border-left-color:var(--teal);}
 .book-card.estado-pendiente{border-left-color:var(--gold);}
+.book-card.estado-descartado{border-left-color:var(--ink-soft); opacity:.75;}
 
 .book-top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;}
 .book-title{
@@ -188,6 +189,7 @@ body{
 .badge.leyendo{background:var(--brick);}
 .badge.terminado{background:var(--teal);}
 .badge.pendiente{background:var(--gold);}
+.badge.descartado{background:var(--ink-soft);}
 
 .stars{color:var(--gold);font-size:.9rem;letter-spacing:1px;}
 .book-notes{font-size:.85rem;color:var(--ink-soft);margin:8px 0 0;font-style:italic;}
@@ -436,6 +438,31 @@ input[type=range]{width:100%;accent-color:var(--teal);margin-top:4px;}
 
 /* --- Reserva en la biblioteca --- */
 .badge.reservado{background:var(--ink-soft);}
+
+/* --- Aviso de libro duplicado --- */
+.dup-warning{
+  margin-top:10px;
+  padding:12px;
+  background:var(--bg);
+  border:1px solid var(--gold);
+  border-radius:10px;
+}
+.dup-warning-text{
+  margin:0 0 4px;
+  font-size:.88rem;
+  color:var(--ink);
+  font-weight:700;
+}
+
+/* Resalte al navegar hasta un libro ya existente. */
+@keyframes highlightFlash{
+  0%, 100%{box-shadow:0 0 0 0 rgba(201,162,39,0);}
+  30%{box-shadow:0 0 0 6px rgba(201,162,39,.55);}
+}
+.book-card.highlight-flash{animation:highlightFlash 1.4s ease-out;}
+@media (prefers-reduced-motion: reduce){
+  .book-card.highlight-flash{animation:none; outline:3px solid var(--gold);}
+}
 
 /* --- Metas e insignias --- */
 .badges-btn{

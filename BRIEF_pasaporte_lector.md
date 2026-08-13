@@ -85,7 +85,7 @@ families/{familyId}/children/{childId}/books/{bookId}
                                    collection, tags[], status, rating, notes,
                                    addedAt, finishedAt, currentPage,
                                    totalMinutes, sessionCount, activeSince,
-                                   reserved, reservedAt }
+                                   reserved, reservedAt, isbn }
 families/{familyId}/children/{childId}/books/{bookId}/sessions/{sessionId}
                                → { startedAt, endedAt, minutes,
                                    pageFrom, pageTo, day }
@@ -233,6 +233,44 @@ Limitación conocida: el navegador suspende el audio cuando la página deja de v
 que es previsible que se pare al bloquear la pantalla. Si molesta en la práctica, el paso
 siguiente es generar el sonido una vez y reproducirlo con un `<audio>` normal, que sí
 sigue con la pantalla apagada — sin volver a descargar nada.
+
+### 6.09 Libros descartados
+
+Cuarto valor de `status`: `pendiente | leyendo | terminado | descartado`. Deja que el
+niño diga "esto no me gusta" y lo saque de en medio, y le da al adulto visibilidad de
+qué colecciones no enganchan — motivo explícito del usuario: "así puedo saber qué
+colecciones no les gustan". No hace falta ningún informe nuevo para eso: filtrando por
+"Descartados" ya se ve la etiqueta de colección de cada tarjeta.
+
+Se decidió como **estado**, no como una marca aparte al estilo de `reserved` — a
+diferencia de reservar, que puede convivir con cualquier estado de lectura, descartar
+un libro **es** dejar de leerlo: no tiene sentido que conviva con "leyendo". Volver
+atrás es tan simple como pulsar cualquiera de los otros tres botones de estado, que ya
+existían; no hizo falta ningún botón de "deshacer" aparte.
+
+### 6.10 Aviso de libro duplicado al añadir
+
+Al pulsar "Guardar libro" en uno nuevo, se comprueba contra los libros ya existentes del
+niño: primero por ISBN si se conoce (más fiable, identifica la edición exacta), si no
+por título y autor exactos (respaldo para libros metidos a mano, que nunca tienen ISBN).
+Si hay coincidencia, se avisa en vez de guardar directamente, con dos salidas: **"Ver
+libro"** (cierra el formulario y lleva hasta la tarjeta ya existente) o **"Añadir de
+todas formas"** (por si de verdad se quieren dos entradas — no se bloquea, solo se
+avisa).
+
+Hasta ahora no se guardaba el ISBN en ningún sitio, así que hubo que añadirlo: se toma
+del ISBN tecleado o escaneado cuando la búsqueda fue por ISBN (más fiable que lo que
+Google Books traiga en `industryIdentifiers`, que puede no coincidir exactamente con la
+edición en la mano), o de ese mismo campo de Google Books cuando la búsqueda fue por
+título. Es metadato invisible, igual que la carátula: no tiene campo editable en el
+formulario.
+
+**"Llevar hasta el libro"** no necesitó ningún sistema de anclas o rutas — la duda que
+planteó el usuario. La lista ya está pintada en la misma pantalla; basta con asegurarse
+de que ningún filtro activo esconda esa tarjeta (se resetean a "todos" sin más), y
+luego `scrollIntoView({behavior:'smooth'})` sobre el elemento con ese `data-book-id`,
+con un resalte breve para que el ojo lo encuentre. Todo del lado del cliente, sin tocar
+Firestore ni la URL.
 
 ### 6.1 Funcionalidades nuevas
 
